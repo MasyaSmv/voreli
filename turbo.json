@@ -1,10 +1,18 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
+
+  // Turborepo runs tasks in a filtered environment: a variable a task is not told about is
+  // simply absent, no matter that the shell had it. Everything a task reads is declared
+  // here, which also makes it part of the cache key — a build with a different API URL is
+  // correctly treated as a different build.
+  "globalEnv": ["NODE_ENV", "CI"],
+
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "env": ["VITE_SERVER_URL", "VITE_DEV_PROXY_TARGET"]
     },
     "dev": {
       "dependsOn": ["^build"],
@@ -18,7 +26,19 @@
       "dependsOn": ["^build"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "env": [
+        "DATABASE_URL",
+        "DATABASE_URL_TEST",
+        "JWT_SECRET",
+        "CORS_ORIGIN",
+        "COOKIE_SECURE",
+        "REDIS_URL",
+        "PORT",
+        "ACCESS_TOKEN_TTL",
+        "REFRESH_TOKEN_TTL_DAYS",
+        "VITE_SERVER_URL"
+      ]
     }
   }
 }
