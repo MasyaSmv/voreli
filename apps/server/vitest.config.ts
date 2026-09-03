@@ -7,6 +7,10 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
+    globalSetup: ["./test/support/global-setup.ts"],
+    // One database, one transaction per test: parallel files would deadlock each other.
+    fileParallelism: false,
+    testTimeout: 20000,
   },
   // esbuild, which Vitest uses by default, drops `emitDecoratorMetadata`. Nest resolves
   // constructor dependencies from that metadata, so without SWC the DI container sees

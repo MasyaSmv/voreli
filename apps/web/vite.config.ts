@@ -10,6 +10,14 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // The refresh cookie is httpOnly and SameSite=Lax, which means it only travels
+    // same-origin. Proxying the API through the dev server keeps development on one origin;
+    // the alternative is SameSite=None, which requires HTTPS locally. In production the
+    // client is served from its own host and uses VITE_SERVER_URL instead.
+    proxy: {
+      "/auth": { target: process.env["VITE_DEV_PROXY_TARGET"] ?? "http://localhost:3000", changeOrigin: true },
+      "/health": { target: process.env["VITE_DEV_PROXY_TARGET"] ?? "http://localhost:3000", changeOrigin: true },
+    },
   },
   test: {
     environment: "jsdom",

@@ -1,0 +1,219 @@
+// Full data model of milestone 1. Written in one piece on purpose: the schema dictates the
+// contracts of specs 002, 003 and 004, and splitting it would mean rewriting migrations
+// three times. See docs/specs/002-data-model-and-auth.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id
+  username     String    @unique
+  displayName  String
+  passwordHash String
+  email        String?   @unique
+  avatarUrl    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions     RefreshSession[]
+  memberships  Member[]
+  ownedServers Server[]         @relation("ServerOwner")
+  messages     Message[]
+  invites      Invite[]
+
+  @@map("users")
+}
+
+/// One long-lived login on one device. The token itself is never stored — only its
+/// SHA-256 — so a database dump cannot be replayed as a session.
+model RefreshSession {
+  id        String    @id
+  userId    String
+  tokenHash String    @unique
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("refresh_sessions")
+}
+
+model Server {
+  id        String   @id
+  name      String
+  ownerId   String
+  iconUrl   String?
+  createdAt DateTime @default(now())
+
+  owner      User       @relation("ServerOwner", fields: [ownerId], references: [id])
+  roles      Role[]
+  members    Member[]
+  categories Category[]
+  channels   Channel[]
+  invites    Invite[]
+
+  @@index([ownerId])
+  @@map("servers")
+}
+
+/// Permissions are a bitmask, not rows: the check runs on every message and every channel
+/// listing, so it has to be arithmetic on a number rather than a query.
+model Role {
+  id          String   @id
+  serverId    String
+  name        String
+  color       Int      @default(0)
+  permissions BigInt   @default(0)
+  position    Int      @default(0)
+  /// The @everyone role. Exactly one per server, created together with the server.
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  server    Server            @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  members   MemberRole[]
+  overrides ChannelOverride[]
+
+  @@unique([serverId, name])
+  @@index([serverId, position])
+  @@map("roles")
+}
+
+model Member {
+  id       String   @id
+  serverId String
+  userId   String
+  nickname String?
+  joinedAt DateTime @default(now())
+
+  server    Server            @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roles     MemberRole[]
+  overrides ChannelOverride[]
+
+  @@unique([serverId, userId])
+  @@index([userId])
+  @@map("members")
+}
+
+model MemberRole {
+  memberId String
+  roleId   String
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, roleId])
+  @@index([roleId])
+  @@map("member_roles")
+}
+
+model Category {
+  id       String @id
+  serverId String
+  name     String
+  position Int    @default(0)
+
+  server   Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channels Channel[]
+
+  @@index([serverId, position])
+  @@map("categories")
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+}
+
+model Channel {
+  id         String      @id
+  serverId   String
+  categoryId String?
+  type       ChannelType
+  name       String
+  topic      String?
+  position   Int         @default(0)
+  createdAt  DateTime    @default(now())
+
+  server    Server            @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  category  Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  messages  Message[]
+  overrides ChannelOverride[]
+
+  @@index([serverId, position])
+  @@index([categoryId, position])
+  @@map("channels")
+}
+
+/// Third step of permission resolution: a per-channel patch on top of the roles a member
+/// already has. Exactly one of roleId / memberId is set.
+model ChannelOverride {
+  id        String @id
+  channelId String
+  roleId    String?
+  memberId  String?
+  allow     BigInt @default(0)
+  deny      BigInt @default(0)
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  role    Role?   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  member  Member? @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, roleId])
+  @@unique([channelId, memberId])
+  @@index([channelId])
+  @@map("channel_overrides")
+}
+
+/// The payload is bytes, not text, and that is deliberate: today it holds UTF-8 JSON, and
+/// when end-to-end encryption lands in M7 it holds ciphertext without migrating the column
+/// or the history in it. `contentSchema` says how to read those bytes. Everything needed to
+/// paginate, thread and count unread lives in separate columns and stays readable.
+model Message {
+  id            String    @id
+  channelId     String
+  authorId      String
+  content       Bytes
+  contentSchema String    @default("text/v1")
+  replyToId     String?
+  createdAt     DateTime  @default(now())
+  editedAt      DateTime?
+  deletedAt     DateTime?
+
+  channel Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author  User      @relation(fields: [authorId], references: [id])
+  replyTo Message?  @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies Message[] @relation("MessageReply")
+
+  // Cursor pagination of channel history walks this index backwards. Never OFFSET.
+  @@index([channelId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([authorId])
+  @@map("messages")
+}
+
+model Invite {
+  id          String    @id
+  code        String    @unique
+  serverId    String
+  createdById String
+  maxUses     Int?
+  uses        Int       @default(0)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  server    Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdBy User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@map("invites")
+}

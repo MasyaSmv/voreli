@@ -12,9 +12,11 @@ export class MissingEnvVariableError extends Error {
 export function serverUrl(): string {
   const value = import.meta.env.VITE_SERVER_URL;
 
-  if (typeof value !== "string" || value.length === 0) {
+  if (typeof value !== "string") {
     throw new MissingEnvVariableError("VITE_SERVER_URL");
   }
 
+  // An empty value is meaningful, not missing: it means "same origin", which is how the
+  // dev server runs so that the httpOnly refresh cookie is sent at all.
   return value.replace(/\/+$/, "");
 }

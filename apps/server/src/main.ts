@@ -3,6 +3,7 @@ import "reflect-metadata";
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import cookieParser from "cookie-parser";
 
 import { AppModule } from "./app.module.js";
 import type { EnvironmentVariables } from "./config/env.validation.js";
@@ -12,6 +13,7 @@ async function bootstrap(): Promise<void> {
   const config = app.get(ConfigService<EnvironmentVariables, true>);
 
   app.enableCors({ origin: config.get("CORS_ORIGIN", { infer: true }), credentials: true });
+  app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.enableShutdownHooks();
 

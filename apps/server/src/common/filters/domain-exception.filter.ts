@@ -9,6 +9,7 @@ import {
 import type { Request, Response } from "express";
 
 import { DomainError } from "../errors/domain-error.js";
+import { isHttpMappable } from "../errors/http-mappable.js";
 
 interface ErrorBody {
   readonly errorCode: string;
@@ -43,7 +44,9 @@ export class DomainExceptionFilter implements ExceptionFilter {
   private describe(exception: unknown): { status: number; body: ErrorBody } {
     if (exception instanceof DomainError) {
       return {
-        status: HttpStatus.UNPROCESSABLE_ENTITY,
+        // The error class decides its status when it cares; otherwise the request was
+        // well-formed but the domain refused it, which is what 422 means.
+        status: isHttpMappable(exception) ? exception.httpStatus : HttpStatus.UNPROCESSABLE_ENTITY,
         body: { errorCode: exception.errorCode, message: exception.message },
       };
     }

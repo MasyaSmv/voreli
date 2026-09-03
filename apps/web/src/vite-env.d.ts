@@ -4,6 +4,7 @@
 // the strictness the project relies on at the one boundary where config enters the client.
 interface ImportMetaEnv {
   readonly VITE_SERVER_URL?: string;
+  readonly VITE_DEV_PROXY_TARGET?: string;
 }
 
 interface ImportMeta {

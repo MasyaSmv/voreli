@@ -14,7 +14,9 @@
     "test": "turbo run test",
     "verify": "turbo run lint typecheck test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "db:migrate": "pnpm --filter @voreli/server db:migrate",
+    "db:studio": "pnpm --filter @voreli/server db:studio"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

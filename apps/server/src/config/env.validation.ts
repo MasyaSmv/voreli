@@ -1,5 +1,14 @@
-import { plainToInstance } from "class-transformer";
-import { IsEnum, IsInt, IsString, Max, Min, MinLength, validateSync } from "class-validator";
+import { plainToInstance, Transform } from "class-transformer";
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+  validateSync,
+} from "class-validator";
 
 export enum NodeEnv {
   Development = "development",
@@ -25,6 +34,45 @@ export class EnvironmentVariables {
   @IsString()
   @MinLength(1)
   CORS_ORIGIN: string = "http://localhost:5173";
+
+  @IsString()
+  @MinLength(1)
+  DATABASE_URL!: string;
+
+  /**
+   * No default on purpose. A development fallback secret is the kind of thing that reaches
+   * production, and every token ever signed with it stays forgeable.
+   */
+  @IsString()
+  @MinLength(32)
+  JWT_SECRET!: string;
+
+  /** Access token lifetime in seconds. Short: it cannot be revoked, only outlived. */
+  @IsInt()
+  @Min(60)
+  @Max(3600)
+  ACCESS_TOKEN_TTL: number = 900;
+
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  REFRESH_TOKEN_TTL_DAYS: number = 30;
+
+  /**
+   * Off in local development, where there is no TLS to carry a Secure cookie.
+   *
+   * Parsed explicitly because implicit conversion runs `Boolean("false")`, which is `true`
+   * — the exact wrong answer for a security flag.
+   */
+  @Transform(({ obj }) => {
+    // Read the raw value, not `value`: enableImplicitConversion has already run
+    // Boolean("false") by the time a transform sees it, which yields true.
+    const raw: unknown = (obj as Record<string, unknown>)["COOKIE_SECURE"];
+
+    return raw === true || raw === "true";
+  })
+  @IsBoolean()
+  COOKIE_SECURE: boolean = false;
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvironmentVariables {
