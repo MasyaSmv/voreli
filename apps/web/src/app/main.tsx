@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { StatusPage } from "../pages/status/StatusPage";
+import { App } from "./App";
 import { Providers } from "./providers";
 import "./styles.css";
 
@@ -14,7 +14,7 @@ if (container === null) {
 createRoot(container).render(
   <StrictMode>
     <Providers>
-      <StatusPage />
+      <App />
     </Providers>
   </StrictMode>,
 );
