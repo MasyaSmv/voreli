@@ -45,6 +45,7 @@ GEMINI.md
 /docs/
 .gstack/
 skills-lock.json
+.entire/
 
 # editors
 .idea/
