@@ -69,13 +69,19 @@ packages/
 Требуется Node 22+, pnpm 10+, Docker.
 
 ```bash
+cp .env.example .env      # порты можно сдвинуть, если заняты
 pnpm install
 docker compose up -d      # postgres, redis, minio
-pnpm db:migrate
-pnpm dev
+pnpm dev                  # сервер и клиент параллельно
 ```
 
+Клиент поднимется на `http://localhost:5173` и покажет состояние сервера. Проверить
+сервер напрямую: `curl http://localhost:3000/health`.
+
+Полезное: `pnpm verify` — линт, проверка типов и тесты одной командой.
 Подробности переменных окружения — в `.env.example`.
+
+Миграций базы пока нет: Postgres поднимается, но схема появится на следующем этапе.
 
 ## Лицензия
 

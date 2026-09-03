@@ -1,0 +1,65 @@
+# Local infrastructure only. Nothing here is a production topology.
+#
+# NOTE for milestone 2 (mediasoup): the SFU does not fit this model. WebRTC media needs a
+# wide range of UDP ports reachable at a routable address, and Docker's default bridge NAT
+# breaks ICE candidates. When the SFU lands, the server either runs on the host, or the
+# container runs with `network_mode: host` (Linux only), or the whole RTC port range is
+# published explicitly and announced to mediasoup as its public IP.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: voreli-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-voreli}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voreli}
+      POSTGRES_DB: ${POSTGRES_DB:-voreli}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-voreli} -d ${POSTGRES_DB:-voreli}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: voreli-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: voreli-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-voreli}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-voreli-secret}
+    ports:
+      - "${S3_PORT:-9000}:9000"
+      - "${S3_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
