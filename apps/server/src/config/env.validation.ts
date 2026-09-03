@@ -39,6 +39,11 @@ export class EnvironmentVariables {
   @MinLength(1)
   DATABASE_URL!: string;
 
+  /** Backs the Socket.IO adapter, so events reach sockets held by other instances. */
+  @IsString()
+  @MinLength(1)
+  REDIS_URL: string = "redis://localhost:6379";
+
   /**
    * No default on purpose. A development fallback secret is the kind of thing that reaches
    * production, and every token ever signed with it stays forgeable.
