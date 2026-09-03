@@ -12,6 +12,34 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+
+    # Tests run against a real Postgres, never against mocks (docs/AGENTS.md), so CI has to
+    # provide one. The health check keeps the job from starting before it accepts queries.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: voreli
+          POSTGRES_PASSWORD: voreli
+          POSTGRES_DB: voreli_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U voreli -d voreli_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # There is no .env in CI; every variable the app validates is passed explicitly.
+      NODE_ENV: test
+      DATABASE_URL: postgresql://voreli:voreli@localhost:5432/voreli_test?schema=public
+      DATABASE_URL_TEST: postgresql://voreli:voreli@localhost:5432/voreli_test?schema=public
+      JWT_SECRET: ci-only-secret-that-is-long-enough-32
+      CORS_ORIGIN: http://localhost:5173
+      COOKIE_SECURE: "false"
+      VITE_SERVER_URL: ""
+
     steps:
       - uses: actions/checkout@v4
 
