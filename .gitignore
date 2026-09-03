@@ -44,6 +44,7 @@ GEMINI.md
 .github/copilot-instructions.md
 /docs/
 .gstack/
+skills-lock.json
 
 # editors
 .idea/
