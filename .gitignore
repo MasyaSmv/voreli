@@ -1,0 +1,50 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# turborepo
+.turbo/
+
+# tauri
+apps/desktop/src-tauri/target/
+
+# testing
+coverage/
+playwright-report/
+test-results/
+.playwright/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# misc
+.DS_Store
+*.pem
+
+# env files: .env.example is the documented contract, keep it tracked
+.env*
+!.env.example
+
+# AI agent rules, memory and session logs: local only, never committed
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.claude/
+.codex/
+.cursor/
+.github/copilot-instructions.md
+/docs/
+.gstack/
+
+# editors
+.idea/
+.vscode/
