@@ -3,7 +3,11 @@
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "./dist",
-    "types": []
+    "types": [],
+    // DOM is here for TextEncoder/TextDecoder only — they exist in both Node 22 and every
+    // browser. Nothing in this package may touch document, window or any other browser API:
+    // the server imports the same files.
+    "lib": ["ES2023", "DOM"]
   },
   "include": ["src/**/*"]
 }

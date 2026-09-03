@@ -1,3 +1,5 @@
+import type { Server } from "node:http";
+
 import { type INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { Prisma } from "@prisma/client";
@@ -16,6 +18,9 @@ class RollbackSignal extends Error {
 
 export interface TestApp {
   readonly app: INestApplication;
+  /** Port the app listens on when started with `listen()`; 0 until then. */
+  port(): number;
+  listen(): Promise<number>;
   readonly prisma: PrismaService;
   /** Opens a transaction and binds it, so everything written in the test is undone. */
   beginTransaction(): Promise<void>;
@@ -39,12 +44,34 @@ export async function createTestApp(): Promise<TestApp> {
   await app.init();
 
   const prisma = app.get(PrismaService);
+  let boundPort = 0;
   let finish: (() => void) | null = null;
   let running: Promise<void> | null = null;
 
   return {
     app,
     prisma,
+
+    port: () => boundPort,
+
+    /**
+     * Socket.IO needs a real listening port: the in-memory supertest transport cannot carry
+     * a websocket upgrade.
+     */
+    async listen(): Promise<number> {
+      if (boundPort !== 0) {
+        return boundPort;
+      }
+
+      await app.listen(0);
+
+      // Nest types getHttpServer() as any; narrow it once, here.
+      const server = app.getHttpServer() as Server;
+      const address = server.address();
+      boundPort = typeof address === "object" && address !== null ? address.port : 0;
+
+      return boundPort;
+    },
 
     async beginTransaction(): Promise<void> {
       await new Promise<void>((ready, failed) => {

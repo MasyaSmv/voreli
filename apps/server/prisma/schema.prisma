@@ -99,6 +99,7 @@ model Member {
   user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   roles     MemberRole[]
   overrides ChannelOverride[]
+  reads     ChannelRead[]
 
   @@unique([serverId, userId])
   @@index([userId])
@@ -149,6 +150,7 @@ model Channel {
   category  Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   messages  Message[]
   overrides ChannelOverride[]
+  reads     ChannelRead[]
 
   @@index([serverId, position])
   @@index([categoryId, position])
@@ -199,6 +201,22 @@ model Message {
   @@index([channelId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([authorId])
   @@map("messages")
+}
+
+/// How far a member has read a channel. Unread is "messages newer than this mark", counted
+/// for every channel of a server in one grouped query rather than one query per channel.
+model ChannelRead {
+  memberId          String
+  channelId         String
+  lastReadMessageId String?
+  updatedAt         DateTime @updatedAt
+
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, channelId])
+  @@index([channelId])
+  @@map("channel_reads")
 }
 
 model Invite {

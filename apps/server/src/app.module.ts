@@ -9,6 +9,7 @@ import { DomainExceptionFilter } from "./common/filters/domain-exception.filter.
 import { validateEnv } from "./config/env.validation.js";
 import { DatabaseModule } from "./infra/database/database.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
+import { ChatModule } from "./modules/chat/chat.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { PermissionsModule } from "./modules/permissions/permissions.module.js";
 import { ServersModule } from "./modules/servers/servers.module.js";
@@ -29,6 +30,7 @@ import { ServersModule } from "./modules/servers/servers.module.js";
     AuthModule,
     PermissionsModule,
     ServersModule,
+    ChatModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],
 })
