@@ -21,7 +21,11 @@ import { type Prisma, PrismaClient } from "@prisma/client";
  */
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
-  readonly client = new PrismaClient();
+  /**
+   * Query events are emitted rather than printed: they let development log slow queries and
+   * let tests assert that a listing does not fan out into an N+1.
+   */
+  readonly client = new PrismaClient({ log: [{ emit: "event", level: "query" }] });
 
   private readonly logger = new Logger(PrismaService.name);
   private readonly transaction = new AsyncLocalStorage<Prisma.TransactionClient>();

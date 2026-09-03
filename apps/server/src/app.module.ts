@@ -10,6 +10,8 @@ import { validateEnv } from "./config/env.validation.js";
 import { DatabaseModule } from "./infra/database/database.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
+import { PermissionsModule } from "./modules/permissions/permissions.module.js";
+import { ServersModule } from "./modules/servers/servers.module.js";
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { HealthModule } from "./modules/health/health.module.js";
     DatabaseModule,
     HealthModule,
     AuthModule,
+    PermissionsModule,
+    ServersModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],
 })

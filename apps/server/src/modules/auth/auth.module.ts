@@ -39,6 +39,6 @@ import { UserPresenter } from "./user-presenter.js";
     SessionOriginResolver,
     UserPresenter,
   ],
-  exports: [AccessTokenGuard, InviteRedemptionService, UserPresenter],
+  exports: [AccessTokenGuard, AccessTokenService, InviteRedemptionService, UserPresenter],
 })
 export class AuthModule {}

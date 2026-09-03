@@ -88,6 +88,13 @@ export class Factories {
     return { id: user.id, username: user.username, password, memberId };
   }
 
+  /** A user with no membership anywhere, for testing what outsiders can see. */
+  async outsider(password = "correct horse battery"): Promise<SeededUser> {
+    const user = await this.rawUser("outsider", password);
+
+    return { id: user.id, username: user.username, password, memberId: "" };
+  }
+
   private async rawUser(
     prefix: string,
     password = "correct horse battery",
