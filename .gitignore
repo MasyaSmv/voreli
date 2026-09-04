@@ -50,3 +50,7 @@ skills-lock.json
 # editors
 .idea/
 .vscode/
+# code graph: a local tool, like .claude/ — the database is regenerable and the MCP
+# config points at a binary a stranger cloning this repository does not have
+.code-review-graph/
+.mcp.json
