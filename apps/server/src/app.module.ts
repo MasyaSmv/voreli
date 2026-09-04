@@ -17,6 +17,7 @@ import { HealthModule } from "./modules/health/health.module.js";
 import { PermissionsModule } from "./modules/permissions/permissions.module.js";
 import { RealtimeModule } from "./modules/realtime/realtime.module.js";
 import { ServersModule } from "./modules/servers/servers.module.js";
+import { VoiceModule } from "./modules/voice/voice.module.js";
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ServersModule } from "./modules/servers/servers.module.js";
     RealtimeModule,
     ServersModule,
     ChatModule,
+    VoiceModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],
 })
