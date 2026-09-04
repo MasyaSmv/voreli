@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Patch,
   Query,
@@ -23,7 +24,10 @@ import { type AuthContext, CurrentAuth } from "../auth/current-user.decorator.js
 import { CurrentPermissions } from "../permissions/current-permissions.decorator.js";
 import { type PermissionContext, PermissionGuard } from "../permissions/permission.guard.js";
 import { RequirePermission } from "../permissions/require-permission.decorator.js";
-import { PermissionResolver } from "../permissions/permission-resolver.service.js";
+import {
+  PERMISSION_RESOLVER,
+  type PermissionResolverContract,
+} from "../permissions/permission-resolver.contract.js";
 import { EditMessageDto, HistoryQueryDto } from "./dto/message.dto.js";
 import { MessagePresenter } from "./message-presenter.js";
 import { MessageService } from "./message.service.js";
@@ -42,7 +46,7 @@ export class MessagesController {
     private readonly messages: MessageService,
     private readonly unread: UnreadService,
     private readonly presenter: MessagePresenter,
-    private readonly permissions: PermissionResolver,
+    @Inject(PERMISSION_RESOLVER) private readonly permissions: PermissionResolverContract,
   ) {}
 
   @Get("channels/:channelId/messages")
@@ -69,7 +73,7 @@ export class MessagesController {
   async unreadCounts(
     @CurrentPermissions() permissions: PermissionContext,
   ): Promise<UnreadResponse> {
-    return this.unread.forServer(permissions.memberId, permissions.serverId);
+    return this.unread.forServer(permissions);
   }
 
   @Patch("messages/:messageId")

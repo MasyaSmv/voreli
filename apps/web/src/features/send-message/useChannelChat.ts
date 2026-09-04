@@ -1,10 +1,13 @@
 import {
+  type ChannelAccessRevokedEvent,
   ClientEvent,
+  type MessageDeletedEvent,
   type MessageView,
   ServerEvent,
   type TypingEvent,
   TYPING_TTL_MS,
 } from "@voreli/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchHistory } from "../../entities/message/message.api";
@@ -47,6 +50,7 @@ function toAck(value: unknown): Ack {
  * sends events for rooms a socket has joined, so switching channels leaves the old room.
  */
 export function useChannelChat(channelId: string | null): ChannelChat {
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<readonly MessageView[]>([]);
   const [typingUntil, setTypingUntil] = useState<ReadonlyMap<string, TypingEvent>>(new Map());
   const [loading, setLoading] = useState(false);
@@ -99,6 +103,26 @@ export function useChannelChat(channelId: string | null): ChannelChat {
       );
     };
 
+    // Edits and deletions also arrive when someone changes a message over HTTP, so the
+    // view stays current without reloading history.
+    const onMessageUpdated = (message: MessageView): void => {
+      if (message.channelId !== channelId) {
+        return;
+      }
+
+      setMessages((current) =>
+        current.map((existing) => (existing.id === message.id ? message : existing)),
+      );
+    };
+
+    const onMessageDeleted = (event: MessageDeletedEvent): void => {
+      if (event.channelId !== channelId) {
+        return;
+      }
+
+      setMessages((current) => current.filter((existing) => existing.id !== event.messageId));
+    };
+
     const onTyping = (event: TypingEvent): void => {
       if (event.channelId !== channelId) {
         return;
@@ -107,16 +131,34 @@ export function useChannelChat(channelId: string | null): ChannelChat {
       setTypingUntil((current) => new Map(current).set(event.userId, event));
     };
 
+    const onAccessRevoked = (event: ChannelAccessRevokedEvent): void => {
+      if (event.channelId !== channelId) {
+        return;
+      }
+
+      setMessages([]);
+      setTypingUntil(new Map());
+      setError("Доступ к каналу отозван");
+      void queryClient.invalidateQueries({ queryKey: ["server"] });
+      void queryClient.invalidateQueries({ queryKey: ["unread"] });
+    };
+
     socket.on(ServerEvent.MessageNew, onMessage);
+    socket.on(ServerEvent.MessageUpdated, onMessageUpdated);
+    socket.on(ServerEvent.MessageDeleted, onMessageDeleted);
     socket.on(ServerEvent.Typing, onTyping);
+    socket.on(ServerEvent.ChannelAccessRevoked, onAccessRevoked);
 
     return () => {
       cancelled = true;
       socket.off(ServerEvent.MessageNew, onMessage);
+      socket.off(ServerEvent.MessageUpdated, onMessageUpdated);
+      socket.off(ServerEvent.MessageDeleted, onMessageDeleted);
       socket.off(ServerEvent.Typing, onTyping);
+      socket.off(ServerEvent.ChannelAccessRevoked, onAccessRevoked);
       void socket.emitWithAck(ClientEvent.Unsubscribe, { channelId });
     };
-  }, [channelId]);
+  }, [channelId, queryClient]);
 
   // The indicator has to go out on its own: the server sends "started", never "stopped".
   useEffect(() => {

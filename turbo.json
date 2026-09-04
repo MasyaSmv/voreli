@@ -37,6 +37,8 @@
         "PORT",
         "ACCESS_TOKEN_TTL",
         "REFRESH_TOKEN_TTL_DAYS",
+        "PERMISSION_CACHE_TTL",
+        "TRUSTED_PROXY_HOPS",
         "VITE_SERVER_URL"
       ]
     }

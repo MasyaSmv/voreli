@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 
 import { AppModule } from "../../src/app.module.js";
 import { PrismaService } from "../../src/infra/database/prisma.service.js";
+import { RedisClientFactory } from "../../src/infra/redis/redis-client.factory.js";
 
 /** Thrown to unwind the per-test transaction; never escapes the harness. */
 class RollbackSignal extends Error {
@@ -24,6 +25,8 @@ export interface TestApp {
   readonly prisma: PrismaService;
   /** Opens a transaction and binds it, so everything written in the test is undone. */
   beginTransaction(): Promise<void>;
+  /** Drops every rate limit counter, so one test's attempts never limit the next one. */
+  resetRateLimits(): Promise<void>;
   rollbackTransaction(): Promise<void>;
   close(): Promise<void>;
 }
@@ -44,6 +47,22 @@ export async function createTestApp(): Promise<TestApp> {
   await app.init();
 
   const prisma = app.get(PrismaService);
+  const redis = app.get(RedisClientFactory).create();
+  await redis.connect();
+
+  /**
+   * Rate limit counters live in Redis, not in the transaction, so the rollback does not
+   * reach them. A suite that logs in once per test would otherwise exhaust the login
+   * allowance and fail on the limiter rather than on what it set out to check.
+   */
+  async function resetRateLimits(): Promise<void> {
+    const keys = await redis.keys("voreli:ratelimit:*");
+
+    if (keys.length > 0) {
+      await redis.del(keys);
+    }
+  }
+
   let boundPort = 0;
   let finish: (() => void) | null = null;
   let running: Promise<void> | null = null;
@@ -73,7 +92,11 @@ export async function createTestApp(): Promise<TestApp> {
       return boundPort;
     },
 
+    resetRateLimits,
+
     async beginTransaction(): Promise<void> {
+      await resetRateLimits();
+
       await new Promise<void>((ready, failed) => {
         running = prisma.client
           .$transaction(
@@ -112,6 +135,10 @@ export async function createTestApp(): Promise<TestApp> {
     },
 
     async close(): Promise<void> {
+      if (redis.isOpen) {
+        await redis.quit();
+      }
+
       await app.close();
     },
   };

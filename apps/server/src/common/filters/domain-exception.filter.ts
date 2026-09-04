@@ -11,6 +11,9 @@ import type { Request, Response } from "express";
 import { DomainError } from "../errors/domain-error.js";
 import { isHttpMappable } from "../errors/http-mappable.js";
 
+/** At or above this the server itself failed; below it the request was refused. */
+const SERVER_FAULT_STATUS = 500;
+
 interface ErrorBody {
   readonly errorCode: string;
   readonly message: string;
@@ -32,11 +35,19 @@ export class DomainExceptionFilter implements ExceptionFilter {
 
     const { status, body } = this.describe(exception);
 
-    this.logger.error(
-      `${request.method} ${request.url} -> ${String(status)} ${body.errorCode}`,
-      exception instanceof Error ? exception.stack : String(exception),
-      exception instanceof DomainError ? JSON.stringify(exception.context()) : undefined,
-    );
+    const line = `${request.method} ${request.url} -> ${String(status)} ${body.errorCode}`;
+
+    // The level follows the status, not the class: a refused action is the rules working,
+    // whoever raised it. A rejected login and a failed validation are the same kind of
+    // event as a domain refusal, and putting all of them in `error` is what makes that
+    // level meaningless — a real outage buried under thousands of routine rejections.
+    if (status < SERVER_FAULT_STATUS) {
+      const context = exception instanceof DomainError ? JSON.stringify(exception.context()) : "";
+
+      this.logger.warn(context === "" ? line : `${line} ${context}`);
+    } else {
+      this.logger.error(line, exception instanceof Error ? exception.stack : String(exception));
+    }
 
     response.status(status).json(body);
   }

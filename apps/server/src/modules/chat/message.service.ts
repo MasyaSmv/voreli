@@ -9,7 +9,8 @@ import {
   NotATextChannelError,
   ReplyTargetNotInChannelError,
 } from "./errors/chat-errors.js";
-import type { MessageWithAuthor } from "./message-presenter.js";
+import { ChatBroadcaster } from "./chat-broadcaster.js";
+import { MessagePresenter, type MessageWithAuthor } from "./message-presenter.js";
 
 export interface SendMessageInput {
   readonly channelId: string;
@@ -34,6 +35,8 @@ export interface HistoryPage {
 export class MessageService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly presenter: MessagePresenter,
+    private readonly broadcaster: ChatBroadcaster,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
   ) {}
 
@@ -134,7 +137,7 @@ export class MessageService {
   async edit(messageId: string, text: string): Promise<MessageWithAuthor> {
     await this.byId(messageId);
 
-    return this.prisma.db.message.update({
+    const updated = await this.prisma.db.message.update({
       where: { id: messageId },
       data: {
         content: Buffer.from(encodeTextContent(text)),
@@ -142,6 +145,13 @@ export class MessageService {
       },
       include: { author: true },
     });
+
+    // Announced here rather than by the caller: an edit is an edit whether it arrived over
+    // HTTP or the socket, and a caller that forgets makes the change invisible to everyone
+    // else until they reload.
+    this.broadcaster.messageUpdated(this.presenter.toView(updated));
+
+    return updated;
   }
 
   /**
@@ -149,11 +159,13 @@ export class MessageService {
    * order. Removing the row would break both.
    */
   async remove(messageId: string): Promise<void> {
-    await this.byId(messageId);
+    const message = await this.byId(messageId);
 
     await this.prisma.db.message.update({
       where: { id: messageId },
       data: { deletedAt: new Date(), content: Buffer.from(encodeTextContent("")) },
     });
+
+    this.broadcaster.messageDeleted({ channelId: message.channelId, messageId });
   }
 }

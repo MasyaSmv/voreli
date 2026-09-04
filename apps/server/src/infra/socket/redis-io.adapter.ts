@@ -1,8 +1,10 @@
 import { createAdapter } from "@socket.io/redis-adapter";
 import { type INestApplicationContext, Logger } from "@nestjs/common";
 import { IoAdapter } from "@nestjs/platform-socket.io";
-import { createClient, type RedisClientType } from "redis";
+import type { RedisClientType } from "redis";
 import type { ServerOptions, Server as SocketServer } from "socket.io";
+
+import type { RedisClientFactory } from "../redis/redis-client.factory.js";
 
 /**
  * Socket.IO across several server instances.
@@ -19,13 +21,13 @@ export class RedisIoAdapter extends IoAdapter {
 
   constructor(
     app: INestApplicationContext,
-    private readonly redisUrl: string,
+    private readonly clients: RedisClientFactory,
   ) {
     super(app);
   }
 
   async connect(): Promise<void> {
-    const publisher: RedisClientType = createClient({ url: this.redisUrl });
+    const publisher: RedisClientType = this.clients.create();
     const subscriber: RedisClientType = publisher.duplicate();
 
     // A dropped Redis connection must not take the process down: Socket.IO keeps working

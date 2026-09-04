@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 
+import { RateLimitModule } from "../../common/rate-limit/rate-limit.module.js";
 import type { EnvironmentVariables } from "../../config/env.validation.js";
 import { AccessTokenGuard } from "./access-token.guard.js";
 import { AccessTokenService } from "./access-token.service.js";
@@ -18,6 +19,7 @@ import { UserPresenter } from "./user-presenter.js";
 
 @Module({
   imports: [
+    RateLimitModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
