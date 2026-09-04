@@ -19,8 +19,10 @@ import {
   type RefreshedResponse,
   type SessionListResponse,
 } from "@voreli/shared";
+import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 
+import { RATE_LIMITS } from "../../common/rate-limit/rate-limit.module.js";
 import { AccessTokenGuard } from "./access-token.guard.js";
 import { AccessTokenService } from "./access-token.service.js";
 import { type AuthContext, CurrentAuth } from "./current-user.decorator.js";
@@ -50,6 +52,7 @@ export class AuthController {
   ) {}
 
   @Post(AUTH_ROUTES.register)
+  @Throttle({ default: RATE_LIMITS.register })
   async register(
     @Body() dto: RegisterDto,
     @Req() request: Request,
@@ -61,6 +64,7 @@ export class AuthController {
   }
 
   @Post(AUTH_ROUTES.login)
+  @Throttle({ default: RATE_LIMITS.login })
   @HttpCode(HttpStatus.OK)
   async logIn(
     @Body() dto: LoginDto,

@@ -1,6 +1,9 @@
 import { Controller, Delete, HttpCode, HttpStatus, Param, Post, UseGuards } from "@nestjs/common";
 import { type JoinedServerResponse, Permission } from "@voreli/shared";
 
+import { Throttle } from "@nestjs/throttler";
+
+import { RATE_LIMITS } from "../../common/rate-limit/rate-limit.module.js";
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { type AuthContext, CurrentAuth } from "../auth/current-user.decorator.js";
 import { InviteRedemptionService } from "../auth/invite-redemption.service.js";
@@ -27,6 +30,7 @@ export class InvitesController {
    * the authorisation, and its validity is checked when it is redeemed.
    */
   @Post(":code/join")
+  @Throttle({ default: RATE_LIMITS.invite })
   async join(
     @Param("code") code: string,
     @CurrentAuth() auth: AuthContext,
