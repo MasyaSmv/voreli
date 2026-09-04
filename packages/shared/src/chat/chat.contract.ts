@@ -21,6 +21,7 @@ export const ServerEvent = {
   MessageUpdated: "message:updated",
   MessageDeleted: "message:deleted",
   Typing: "typing",
+  ChannelAccessRevoked: "channel:access-revoked",
   Error: "error",
 } as const;
 
@@ -95,8 +96,14 @@ export interface SocketErrorEvent {
   readonly message: string;
 }
 
+/** The socket was removed from a room because ViewChannel no longer resolves. */
+export interface ChannelAccessRevokedEvent {
+  readonly channelId: string;
+}
+
 /** Acknowledgement shape for client-to-server events that expect an answer. */
-export type Ack<T> = { readonly ok: true; readonly data: T } | { readonly ok: false } & SocketErrorEvent;
+export type Ack<T> =
+  { readonly ok: true; readonly data: T } | ({ readonly ok: false } & SocketErrorEvent);
 
 export const CHAT_ROUTES = {
   messages: (channelId: string) => `/channels/${channelId}/messages`,

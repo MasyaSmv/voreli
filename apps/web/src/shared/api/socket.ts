@@ -1,10 +1,16 @@
-import { CHAT_NAMESPACE } from "@voreli/shared";
+import { CHAT_NAMESPACE, ClientEvent } from "@voreli/shared";
 import { io, type Socket } from "socket.io-client";
 
 import { serverUrl } from "../config/env";
-import { getAccessToken } from "./http";
+import { getAccessToken, observeAccessToken } from "./http";
 
 let socket: Socket | null = null;
+
+observeAccessToken((token) => {
+  if (token !== null && socket?.connected === true) {
+    socket.emit(ClientEvent.RefreshAuth, { accessToken: token });
+  }
+});
 
 /**
  * One socket per session, created lazily after login.

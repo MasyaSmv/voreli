@@ -17,13 +17,27 @@ export class HttpError extends Error {
  * revoked before it expires. The refresh token is an httpOnly cookie the page cannot see.
  */
 let accessToken: string | null = null;
+const accessTokenObservers = new Set<(token: string | null) => void>();
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+
+  for (const observer of accessTokenObservers) {
+    observer(token);
+  }
 }
 
 export function getAccessToken(): string | null {
   return accessToken;
+}
+
+/** Lets realtime transports adopt a rotated token without coupling HTTP to Socket.IO. */
+export function observeAccessToken(observer: (token: string | null) => void): () => void {
+  accessTokenObservers.add(observer);
+
+  return () => {
+    accessTokenObservers.delete(observer);
+  };
 }
 
 interface RequestOptions {
@@ -44,7 +58,8 @@ async function parse(response: Response): Promise<unknown> {
 }
 
 function errorFrom(status: number, payload: unknown): HttpError {
-  const body = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+  const body =
+    typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
   const errorCode = typeof body["errorCode"] === "string" ? body["errorCode"] : "UNKNOWN";
   const message = typeof body["message"] === "string" ? body["message"] : "Request failed";
 
