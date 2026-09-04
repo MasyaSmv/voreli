@@ -130,3 +130,8 @@ export interface VoiceProducerClosedEvent {
 export interface VoiceSpeakingEvent {
   readonly speaking: readonly { readonly userId: string; readonly level: number }[];
 }
+
+export interface VoiceErrorEvent {
+  readonly errorCode: string;
+  readonly message: string;
+}

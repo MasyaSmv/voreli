@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { VoiceServerEvent } from "@voreli/shared";
 import type { Namespace } from "socket.io";
 
 import type { AuthenticatedSocket } from "../realtime/authenticated.gateway.js";
@@ -31,7 +32,13 @@ export class VoiceSocketMembershipService {
         socket.data !== null &&
         (socket.data as { userId?: unknown }).userId === userId,
     );
-    for (const socket of sockets) await socket.leave(room);
+    for (const socket of sockets) {
+      socket.emit(VoiceServerEvent.Error, {
+        errorCode: "VOICE_CONNECT_FORBIDDEN",
+        message: "Connecting to this voice channel is no longer allowed",
+      });
+      await socket.leave(room);
+    }
   }
 
   private async leaveAllExcept(socket: AuthenticatedSocket, except?: string): Promise<void> {

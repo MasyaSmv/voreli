@@ -13,6 +13,7 @@ import {
   type VoiceParticipantJoinedEvent,
   type VoiceProducerEvent,
   type VoiceJoinResponse,
+  type VoiceErrorEvent,
 } from "@voreli/shared";
 import { io, type Socket } from "socket.io-client";
 import request from "supertest";
@@ -166,6 +167,7 @@ describe("voice signaling", () => {
       bobSocket,
       VoiceServerEvent.ParticipantLeft,
     );
+    const accessRevoked = waitFor<VoiceErrorEvent>(aliceSocket, VoiceServerEvent.Error);
     await request(harness.app.getHttpServer())
       .put(`/channels/${channelId}/overrides`)
       .set("Authorization", `Bearer ${ownerToken}`)
@@ -176,6 +178,9 @@ describe("voice signaling", () => {
       })
       .expect(204);
     await expect(participantLeft).resolves.toEqual({ userId: alice.id });
+    await expect(accessRevoked).resolves.toMatchObject({
+      errorCode: "VOICE_CONNECT_FORBIDDEN",
+    });
   });
 
   async function login(user: SeededUser): Promise<string> {
