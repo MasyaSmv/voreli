@@ -16,3 +16,6 @@ if (typeof testUrl === "string" && testUrl.length > 0) {
 }
 
 process.env["NODE_ENV"] = "test";
+// A real mediasoup worker is booted by every application harness. One is enough to test
+// the media contracts and keeps the sequential suite from paying for every host CPU.
+process.env["MEDIASOUP_MAX_WORKERS"] = "1";

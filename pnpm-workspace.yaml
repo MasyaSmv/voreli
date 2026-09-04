@@ -11,4 +11,5 @@ allowBuilds:
   "@swc/core": true
   argon2: true
   esbuild: true
+  mediasoup: true
   prisma: true

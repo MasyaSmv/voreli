@@ -1,15 +1,26 @@
 import { createId } from "@paralleldrive/cuid2";
+import { ConfigModule } from "@nestjs/config";
+import { Test, type TestingModule } from "@nestjs/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { DOMAIN_EVENT_BUS, type DomainEventBus } from "../../src/common/events/domain-event-bus.js";
-import { createTestApp, type TestApp } from "../support/test-app.js";
+import { validateEnv } from "../../src/config/env.validation.js";
+import { RedisModule } from "../../src/infra/redis/redis.module.js";
 
 describe("Redis domain event bus", () => {
-  let publisherApp: TestApp;
-  let subscriberApp: TestApp;
+  let publisherApp: TestingModule;
+  let subscriberApp: TestingModule;
 
   beforeAll(async () => {
-    [publisherApp, subscriberApp] = await Promise.all([createTestApp(), createTestApp()]);
+    const createBusModule = async (): Promise<TestingModule> => {
+      const moduleRef = await Test.createTestingModule({
+        imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }), RedisModule],
+      }).compile();
+      await moduleRef.init();
+      return moduleRef;
+    };
+
+    [publisherApp, subscriberApp] = await Promise.all([createBusModule(), createBusModule()]);
   });
 
   afterAll(async () => {
@@ -17,8 +28,8 @@ describe("Redis domain event bus", () => {
   });
 
   it("delivers an event to a separate application instance through Redis", async () => {
-    const publisher = publisherApp.app.get<DomainEventBus>(DOMAIN_EVENT_BUS);
-    const subscriber = subscriberApp.app.get<DomainEventBus>(DOMAIN_EVENT_BUS);
+    const publisher = publisherApp.get<DomainEventBus>(DOMAIN_EVENT_BUS);
+    const subscriber = subscriberApp.get<DomainEventBus>(DOMAIN_EVENT_BUS);
     const sessionId = createId();
     const userId = createId();
 
@@ -44,8 +55,8 @@ describe("Redis domain event bus", () => {
   });
 
   it("finishes a shared effect before publish returns, and runs it on the publisher only", async () => {
-    const publisher = publisherApp.app.get<DomainEventBus>(DOMAIN_EVENT_BUS);
-    const subscriber = subscriberApp.app.get<DomainEventBus>(DOMAIN_EVENT_BUS);
+    const publisher = publisherApp.get<DomainEventBus>(DOMAIN_EVENT_BUS);
+    const subscriber = subscriberApp.get<DomainEventBus>(DOMAIN_EVENT_BUS);
     const serverId = createId();
     const userId = createId();
     const ran: string[] = [];
