@@ -13,8 +13,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
 
-    # Tests run against a real Postgres, never against mocks (docs/AGENTS.md), so CI has to
-    # provide one. The health check keeps the job from starting before it accepts queries.
+    # Tests run against real dependencies, never against mocks (docs/AGENTS.md), so CI has
+    # to provide them. The health checks keep the job from starting before they answer.
     services:
       postgres:
         image: postgres:17-alpine
@@ -30,11 +30,25 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # The app does not merely cache in Redis: the domain event bus, the permission cache
+      # and the rate limiter all connect at startup, so without this service every test
+      # that boots the application hangs in its own `beforeAll` and times out.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
       # There is no .env in CI; every variable the app validates is passed explicitly.
       NODE_ENV: test
       DATABASE_URL: postgresql://voreli:voreli@localhost:5432/voreli_test?schema=public
       DATABASE_URL_TEST: postgresql://voreli:voreli@localhost:5432/voreli_test?schema=public
+      REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-only-secret-that-is-long-enough-32
       CORS_ORIGIN: http://localhost:5173
       COOKIE_SECURE: "false"
