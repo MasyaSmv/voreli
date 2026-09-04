@@ -60,3 +60,24 @@ export class NotATextChannelError extends DomainError implements HttpMappable {
     return { channelId: this.channelId };
   }
 }
+
+/**
+ * A read mark addresses a channel and a message, and the two must agree. Without the check
+ * a read position can be anchored to a message from a channel the caller cannot even see.
+ */
+export class MessageNotInChannelError extends DomainError implements HttpMappable {
+  static readonly CODE = "MESSAGE_NOT_IN_CHANNEL";
+  readonly errorCode = MessageNotInChannelError.CODE;
+  readonly httpStatus = HttpStatus.UNPROCESSABLE_ENTITY;
+
+  constructor(
+    readonly messageId: string,
+    readonly channelId: string,
+  ) {
+    super(`Message ${messageId} does not belong to channel ${channelId}`);
+  }
+
+  override context(): Readonly<Record<string, unknown>> {
+    return { messageId: this.messageId, channelId: this.channelId };
+  }
+}

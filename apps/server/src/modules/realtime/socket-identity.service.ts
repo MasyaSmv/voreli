@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type { User } from "@prisma/client";
 
 import { PrismaService } from "../../infra/database/prisma.service.js";
@@ -16,6 +16,8 @@ export interface SocketIdentity {
  */
 @Injectable()
 export class SocketIdentityService {
+  private readonly logger = new Logger(SocketIdentityService.name);
+
   constructor(
     private readonly tokens: AccessTokenService,
     private readonly prisma: PrismaService,
@@ -26,21 +28,26 @@ export class SocketIdentityService {
       return null;
     }
 
-    const claims = await this.tokens.verify(token).catch(() => null);
+    try {
+      const claims = await this.tokens.verify(token);
+      const session = await this.prisma.db.refreshSession.findUnique({
+        where: { id: claims.sid },
+        include: { user: true },
+      });
 
-    if (!claims) {
+      if (!session || session.revokedAt !== null) {
+        return null;
+      }
+
+      return { user: session.user, sessionId: session.id };
+    } catch (error: unknown) {
+      this.logger.error({
+        message: "Socket identity resolution failed",
+        error,
+        operation: "identifySocket",
+      });
+
       return null;
     }
-
-    const session = await this.prisma.db.refreshSession.findUnique({
-      where: { id: claims.sid },
-      include: { user: true },
-    });
-
-    if (!session || session.revokedAt !== null) {
-      return null;
-    }
-
-    return { user: session.user, sessionId: session.id };
   }
 }

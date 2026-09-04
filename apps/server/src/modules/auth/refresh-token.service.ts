@@ -4,13 +4,11 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 import { CLOCK, type Clock } from "../../common/services/clock.js";
+import { DOMAIN_EVENT_BUS, type DomainEventBus } from "../../common/events/domain-event-bus.js";
 import { ID_GENERATOR, type IdGenerator } from "../../common/services/id-generator.js";
 import type { EnvironmentVariables } from "../../config/env.validation.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
-import {
-  InvalidRefreshTokenError,
-  SessionReuseDetectedError,
-} from "./errors/auth-errors.js";
+import { InvalidRefreshTokenError, SessionReuseDetectedError } from "./errors/auth-errors.js";
 
 export interface IssuedRefreshToken {
   readonly sessionId: string;
@@ -42,6 +40,7 @@ export class RefreshTokenService {
     private readonly config: ConfigService<EnvironmentVariables, true>,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
+    @Inject(DOMAIN_EVENT_BUS) private readonly events: DomainEventBus,
   ) {}
 
   async issue(userId: string, origin: SessionOrigin): Promise<IssuedRefreshToken> {
@@ -128,24 +127,68 @@ export class RefreshTokenService {
   }
 
   async revokeByToken(token: string): Promise<void> {
-    await this.prisma.db.refreshSession.updateMany({
-      where: { tokenHash: this.hash(token), revokedAt: null },
+    const session = await this.prisma.db.refreshSession.findUnique({
+      where: { tokenHash: this.hash(token) },
+      select: { id: true, userId: true },
+    });
+
+    if (!session) {
+      return;
+    }
+
+    const revoked = await this.prisma.db.refreshSession.updateMany({
+      where: { id: session.id, revokedAt: null },
       data: { revokedAt: this.clock.now() },
     });
+
+    if (revoked.count > 0) {
+      await this.events.publish("session.revoked", {
+        sessionId: session.id,
+        userId: session.userId,
+      });
+    }
   }
 
   async revokeById(sessionId: string): Promise<void> {
-    await this.prisma.db.refreshSession.updateMany({
+    const session = await this.prisma.db.refreshSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true },
+    });
+
+    if (!session) {
+      return;
+    }
+
+    const revoked = await this.prisma.db.refreshSession.updateMany({
       where: { id: sessionId, revokedAt: null },
       data: { revokedAt: this.clock.now() },
     });
+
+    if (revoked.count > 0) {
+      await this.events.publish("session.revoked", {
+        sessionId: session.id,
+        userId: session.userId,
+      });
+    }
   }
 
   async revokeAllOf(userId: string): Promise<number> {
+    // Include already-revoked sessions: a socket may still be bound to the session that
+    // was rotated before its client sent auth:refresh. Theft punishment must kill it too.
+    const sessions = await this.prisma.db.refreshSession.findMany({
+      where: { userId },
+      select: { id: true },
+    });
     const result = await this.prisma.db.refreshSession.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: this.clock.now() },
     });
+
+    await Promise.all(
+      sessions.map((session) =>
+        this.events.publish("session.revoked", { sessionId: session.id, userId }),
+      ),
+    );
 
     return result.count;
   }

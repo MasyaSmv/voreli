@@ -1,10 +1,7 @@
-import { Logger } from "@nestjs/common";
+import { Inject, UseInterceptors } from "@nestjs/common";
 import {
   ConnectedSocket,
   MessageBody,
-  type OnGatewayConnection,
-  type OnGatewayDisconnect,
-  type OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -18,7 +15,6 @@ import {
   MESSAGE_MAX_LENGTH,
   type MessageView,
   Permission,
-  type RefreshAuthPayload,
   type SendMessagePayload,
   ServerEvent,
   type SubscribePayload,
@@ -26,102 +22,51 @@ import {
   type TypingPayload,
   TYPING_TTL_MS,
 } from "@voreli/shared";
-import type { Server, Socket } from "socket.io";
+import type { Namespace } from "socket.io";
 
-import { DomainError } from "../../common/errors/domain-error.js";
-import { PermissionResolver } from "../permissions/permission-resolver.service.js";
+import { DOMAIN_EVENT_BUS, type DomainEventBus } from "../../common/events/domain-event-bus.js";
+import { WsRateLimit } from "../../common/rate-limit/ws-rate-limit.decorator.js";
+import { WsRateLimitInterceptor } from "../../common/rate-limit/ws-rate-limit.interceptor.js";
+import {
+  PERMISSION_RESOLVER,
+  type PermissionResolverContract,
+} from "../permissions/permission-resolver.contract.js";
+import {
+  AuthenticatedGateway,
+  type AuthenticatedSocket,
+} from "../realtime/authenticated.gateway.js";
+import { SocketIdentityService } from "../realtime/socket-identity.service.js";
+import { SocketSessionRegistry } from "../realtime/socket-session.registry.js";
+import { ChatBroadcaster, channelRoomOf as roomOf } from "./chat-broadcaster.js";
+import { ChatRoomAccessService } from "./chat-room-access.service.js";
 import { MessagePresenter } from "./message-presenter.js";
 import { MessageService } from "./message.service.js";
-import { SocketIdentityService, type SocketIdentity } from "./socket-identity.service.js";
 import { UnreadService } from "./unread.service.js";
 
-/** Socket.IO room holding everyone currently looking at a channel. */
-function roomOf(channelId: string): string {
-  return `channel:${channelId}`;
-}
-
-interface AuthenticatedSocket extends Socket {
-  identity?: SocketIdentity;
-}
-
 @WebSocketGateway({ namespace: CHAT_NAMESPACE })
-export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+@UseInterceptors(WsRateLimitInterceptor)
+export class ChatGateway extends AuthenticatedGateway {
   @WebSocketServer()
-  private readonly server!: Server;
-
-  private readonly logger = new Logger(ChatGateway.name);
+  private readonly server!: Namespace;
 
   constructor(
-    private readonly identities: SocketIdentityService,
-    private readonly permissions: PermissionResolver,
+    identities: SocketIdentityService,
+    sessions: SocketSessionRegistry,
+    @Inject(DOMAIN_EVENT_BUS) events: DomainEventBus,
+    @Inject(PERMISSION_RESOLVER) private readonly permissions: PermissionResolverContract,
     private readonly messages: MessageService,
     private readonly unread: UnreadService,
     private readonly presenter: MessagePresenter,
-  ) {}
-
-  /**
-   * Authentication runs as connection middleware, not in handleConnection.
-   *
-   * handleConnection is async and the client is already "connected" while it runs: a client
-   * that emits immediately after connect would be rejected for having no identity yet,
-   * purely because a database lookup had not finished. Middleware settles identity before
-   * the connection exists at all, so there is no window.
-   */
-  afterInit(server: Server): void {
-    server.use((socket: AuthenticatedSocket, next: (error?: Error) => void) => {
-      const token = (socket.handshake.auth as { token?: unknown } | undefined)?.token;
-
-      this.identities
-        .identify(typeof token === "string" ? token : undefined)
-        .then((identity) => {
-          if (!identity) {
-            next(new Error("UNAUTHENTICATED"));
-
-            return;
-          }
-
-          socket.identity = identity;
-          next();
-        })
-        .catch((error: unknown) => {
-          this.logger.error(
-            "Socket authentication failed",
-            error instanceof Error ? error.stack : String(error),
-          );
-          next(new Error("UNAUTHENTICATED"));
-        });
-    });
+    private readonly roomAccess: ChatRoomAccessService,
+    private readonly broadcaster: ChatBroadcaster,
+  ) {
+    super(identities, sessions, events);
   }
 
-  handleConnection(socket: AuthenticatedSocket): void {
-    this.logger.log(`Socket ${socket.id} connected as ${socket.identity?.user.id ?? "unknown"}`);
-  }
-
-  handleDisconnect(socket: AuthenticatedSocket): void {
-    this.logger.log(`Socket ${socket.id} disconnected`);
-  }
-
-  /**
-   * A socket outlives the 15-minute access token it connected with. Rather than dropping
-   * the connection, the client sends its refreshed token and the identity is replaced in
-   * place.
-   */
-  @SubscribeMessage(ClientEvent.RefreshAuth)
-  async refreshAuth(
-    @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: RefreshAuthPayload,
-  ): Promise<Ack<{ userId: string }>> {
-    const identity = await this.identities.identify(payload.accessToken);
-
-    if (!identity) {
-      socket.disconnect(true);
-
-      return { ok: false, errorCode: "UNAUTHENTICATED", message: "Token is not usable" };
-    }
-
-    socket.identity = identity;
-
-    return { ok: true, data: { userId: identity.user.id } };
+  override afterInit(server: Namespace): void {
+    super.afterInit(server);
+    this.roomAccess.attach(server);
+    this.broadcaster.attach(server);
   }
 
   @SubscribeMessage(ClientEvent.Subscribe)
@@ -158,6 +103,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   }
 
   @SubscribeMessage(ClientEvent.SendMessage)
+  @WsRateLimit({ limit: 10, windowMs: 5_000 })
   async sendMessage(
     @ConnectedSocket() socket: AuthenticatedSocket,
     @MessageBody() payload: SendMessagePayload,
@@ -202,13 +148,15 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       // Everyone in the room gets it, sender included: the sender's optimistic copy is
       // replaced by matching clientNonce, so one code path serves both cases.
-      this.server.to(roomOf(payload.channelId)).emit(ServerEvent.MessageNew, view);
+      this.broadcaster.messageCreated(view);
 
       return { ok: true as const, data: { message: view } };
     });
   }
 
+  // Typing fires on keystrokes, so its allowance is looser than sending but still finite.
   @SubscribeMessage(ClientEvent.TypingStart)
+  @WsRateLimit({ limit: 20, windowMs: 5_000 })
   async typing(
     @ConnectedSocket() socket: AuthenticatedSocket,
     @MessageBody() payload: TypingPayload,
@@ -250,40 +198,5 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       return { ok: true as const, data: null };
     });
-  }
-
-  /**
-   * Shared shell for every handler: requires an identity and turns a thrown domain error
-   * into the same acknowledgement shape a refusal uses. Without it each handler would
-   * repeat the check, and one of them would eventually forget.
-   */
-  private async guarded<T>(
-    socket: AuthenticatedSocket,
-    work: (identity: SocketIdentity) => Promise<Ack<T>>,
-  ): Promise<Ack<T>> {
-    const identity = socket.identity;
-
-    if (!identity) {
-      socket.disconnect(true);
-
-      return { ok: false, errorCode: "UNAUTHENTICATED", message: "Socket is not authenticated" };
-    }
-
-    try {
-      return await work(identity);
-    } catch (error) {
-      if (error instanceof DomainError) {
-        this.logger.warn(`Socket ${socket.id}: ${error.errorCode} ${error.message}`);
-
-        return { ok: false, errorCode: error.errorCode, message: error.message };
-      }
-
-      this.logger.error(
-        `Socket ${socket.id} handler failed`,
-        error instanceof Error ? error.stack : String(error),
-      );
-
-      return { ok: false, errorCode: "INTERNAL_ERROR", message: "Internal server error" };
-    }
   }
 }
