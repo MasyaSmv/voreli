@@ -200,6 +200,17 @@ class VoiceSession {
     });
   }
 
+  startEcho(): Promise<void> {
+    this.unlockAudio();
+    return this.serial(async () => {
+      if (!this.producer) throw new Error("Микрофон ещё не готов");
+      await this.consume(this.producer.id);
+    }).catch((error: unknown) => {
+      this.fail(error);
+      throw error;
+    });
+  }
+
   private async joinFresh(channelId: string, microphone: Promise<MediaStream>): Promise<void> {
     if (this.channelId === channelId && useVoice.getState().connection === "connected") {
       (await microphone).getTracks().forEach((track) => track.stop());
@@ -381,10 +392,12 @@ class VoiceSession {
       rtpParameters: response.rtpParameters,
     });
     const element = new Audio();
-    element.autoplay = true;
+    element.hidden = true;
+    element.dataset["producerId"] = producerId;
     element.srcObject = new MediaStream([consumer.track]);
+    document.body.append(element);
     this.received.set(producerId, { consumer, element });
-    await element.play();
+    if (!(this.selfParticipant()?.selfDeafened ?? false)) await element.play();
     await this.request<null>(VoiceClientEvent.ResumeConsumer, { consumerId: consumer.id });
   }
 
@@ -396,6 +409,10 @@ class VoiceSession {
       this.publishSpeaking();
     } else {
       this.producer?.resume();
+    }
+    for (const received of this.received.values()) {
+      if (state.selfDeafened) received.element.pause();
+      else await received.element.play();
     }
   }
 
@@ -416,6 +433,7 @@ class VoiceSession {
     received.consumer.close();
     received.element.pause();
     received.element.srcObject = null;
+    received.element.remove();
     this.received.delete(producerId);
   }
 

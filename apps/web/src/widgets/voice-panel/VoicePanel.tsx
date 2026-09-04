@@ -79,6 +79,14 @@ export function VoicePanel({ channel }: { readonly channel: ChannelView }) {
               >
                 Выйти
               </button>
+              <button
+                type="button"
+                disabled={!own || own.selfMuted}
+                onClick={() => void voiceSession.startEcho().catch(() => undefined)}
+                className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"
+              >
+                Проверить эхо
+              </button>
             </div>
           </>
         )}

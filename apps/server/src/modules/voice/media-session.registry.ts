@@ -1,7 +1,9 @@
 import { Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { TransportDirection } from "@voreli/shared";
 import type { types } from "mediasoup";
 
+import type { EnvironmentVariables } from "../../config/env.validation.js";
 import type { VoiceRouterHandle } from "../../media/router-registry.service.js";
 import { TransportFactory } from "../../media/transport.factory.js";
 import {
@@ -52,8 +54,16 @@ export class MediaSessionRegistry implements OnModuleDestroy {
   private readonly producers = new Map<string, RoomProducer>();
   private readonly failureHandlers = new Set<TransportFailureHandler>();
   private readonly failedSessions = new Set<string>();
+  private readonly transportFailureTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly transportFailureGraceMs: number;
 
-  constructor(private readonly transports: TransportFactory) {}
+  constructor(
+    private readonly transports: TransportFactory,
+    config: ConfigService<EnvironmentVariables, true>,
+  ) {
+    this.transportFailureGraceMs =
+      config.get("VOICE_RECONNECT_GRACE", { infer: true }) * 1_000;
+  }
 
   register(sessionId: string, channelId: string, handle: VoiceRouterHandle): void {
     if (this.sessions.has(sessionId)) {
@@ -97,15 +107,22 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     const owned: OwnedTransport = { direction, transport };
     session.transports.set(transport.id, owned);
 
-    transport.observer.once("close", () => session.transports.delete(transport.id));
+    transport.observer.once("close", () => {
+      this.clearTransportFailureTimer(transport.id);
+      session.transports.delete(transport.id);
+    });
     transport.on("dtlsstatechange", (state) => {
       if (state === "closed" || state === "failed") {
         this.transportFailed(sessionId, transport);
       }
     });
     transport.on("icestatechange", (state) => {
-      if (state === "closed" || state === "disconnected") {
+      if (state === "closed") {
         this.transportFailed(sessionId, transport);
+      } else if (state === "disconnected") {
+        this.scheduleTransportFailure(sessionId, transport);
+      } else if (state === "connected" || state === "completed") {
+        this.clearTransportFailureTimer(transport.id);
       }
     });
 
@@ -241,6 +258,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     this.sessions.delete(sessionId);
 
     for (const transport of session.transports.values()) {
+      this.clearTransportFailureTimer(transport.transport.id);
       transport.transport.close();
     }
 
@@ -286,6 +304,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
   }
 
   private transportFailed(sessionId: string, transport: types.WebRtcTransport): void {
+    this.clearTransportFailureTimer(transport.id);
     if (this.failedSessions.has(sessionId)) {
       return;
     }
@@ -313,5 +332,23 @@ export class MediaSessionRegistry implements OnModuleDestroy {
           if (!transport.closed) transport.close();
         });
     }
+  }
+
+  private scheduleTransportFailure(sessionId: string, transport: types.WebRtcTransport): void {
+    if (this.transportFailureTimers.has(transport.id)) return;
+
+    const timer = setTimeout(() => {
+      this.transportFailureTimers.delete(transport.id);
+      if (!transport.closed) this.transportFailed(sessionId, transport);
+    }, this.transportFailureGraceMs);
+    timer.unref();
+    this.transportFailureTimers.set(transport.id, timer);
+  }
+
+  private clearTransportFailureTimer(transportId: string): void {
+    const timer = this.transportFailureTimers.get(transportId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.transportFailureTimers.delete(transportId);
   }
 }

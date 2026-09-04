@@ -51,6 +51,10 @@ describe("media session ownership", () => {
     await expect(registry.restartIce("session-two", send.id)).rejects.toBeInstanceOf(
       VoiceMediaObjectNotFoundError,
     );
+    send.emit("icestatechange", "disconnected");
+    await expect(registry.restartIce("session-one", send.id)).resolves.toBeDefined();
+    expect(send.closed).toBe(false);
+    send.emit("icestatechange", "connected");
     await expect(
       registry.createProducer("session-one", recv.id, "audio", rtpParameters(handle.router), false),
     ).rejects.toBeInstanceOf(VoiceInvalidTransportDirectionError);
