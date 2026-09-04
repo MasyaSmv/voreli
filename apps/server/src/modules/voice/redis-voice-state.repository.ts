@@ -46,6 +46,8 @@ if existing and ARGV[3] ~= '' and existing.sessionId == ARGV[3] and existing.soc
   return {'RESUMED', resumed}
 end
 
+if not existing and redis.call('HLEN', KEYS[2]) >= tonumber(ARGV[8]) then return {'FULL'} end
+
 local participant = {
   userId = ARGV[1], sessionId = ARGV[5], generation = generation, socketId = ARGV[4],
   selfMuted = false, selfDeafened = false, moderatorMuted = false,
@@ -176,10 +178,14 @@ export class RedisVoiceStateRepository
   private readonly logger = new Logger(RedisVoiceStateRepository.name);
   private readonly redis: RedisClientType;
   private readonly ttlSeconds: number;
+  private readonly maxParticipants: number;
+  private readonly instanceId: string;
 
   constructor(clients: RedisClientFactory, config: ConfigService<EnvironmentVariables, true>) {
     this.redis = clients.create();
     this.ttlSeconds = config.get("VOICE_PRESENCE_TTL", { infer: true });
+    this.maxParticipants = config.get("VOICE_MAX_PARTICIPANTS", { infer: true });
+    this.instanceId = config.get("INSTANCE_ID", { infer: true });
     this.redis.on("error", (error: Error) => {
       this.logger.error({ message: "Voice-state Redis connection error", error });
     });
@@ -187,6 +193,7 @@ export class RedisVoiceStateRepository
 
   async onModuleInit(): Promise<void> {
     await this.redis.connect();
+    await this.removeRoomsOwnedBy(this.instanceId);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -220,6 +227,7 @@ export class RedisVoiceStateRepository
           input.newSessionId,
           input.now,
           String(this.ttlSeconds),
+          String(this.maxParticipants),
         ],
       }),
     );
@@ -230,6 +238,10 @@ export class RedisVoiceStateRepository
 
     if (result[0] === "EVICTING") {
       return { kind: "evicting" };
+    }
+
+    if (result[0] === "FULL") {
+      return { kind: "full" };
     }
 
     const participant = parseParticipant(result[1] ?? "");
@@ -243,6 +255,10 @@ export class RedisVoiceStateRepository
       participant,
       displaced: result[2] ? parseParticipant(result[2]) : null,
     };
+  }
+
+  async channelOf(userId: string): Promise<string | null> {
+    return this.redis.get(userKey(userId));
   }
 
   async participant(channelId: string, userId: string): Promise<VoiceParticipantState | null> {

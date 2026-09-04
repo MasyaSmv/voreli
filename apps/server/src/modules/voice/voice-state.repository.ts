@@ -35,10 +35,12 @@ export type VoiceJoinResult =
     }
   | { readonly kind: "resumed"; readonly participant: VoiceParticipantState }
   | { readonly kind: "other-channel"; readonly channelId: string }
+  | { readonly kind: "full" }
   | { readonly kind: "evicting" };
 
 export interface VoiceStateRepository {
   claimRoom(channelId: string, meta: VoiceRoomMeta): Promise<string>;
+  channelOf(userId: string): Promise<string | null>;
   join(input: VoiceJoinInput): Promise<VoiceJoinResult>;
   participant(channelId: string, userId: string): Promise<VoiceParticipantState | null>;
   participants(channelId: string): Promise<readonly VoiceParticipantState[]>;

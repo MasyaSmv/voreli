@@ -140,6 +140,33 @@ describe("Redis voice state", () => {
     await expect(redis.exists("voice:channel:foreign-channel:meta")).resolves.toBe(1);
   });
 
+  it("enforces room capacity inside the atomic join transition", async () => {
+    await claim("full-channel");
+
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        repository.join({
+          channelId: "full-channel",
+          userId: `user-${String(index)}`,
+          socketId: `socket-${String(index)}`,
+          newSessionId: `session-${String(index)}`,
+          now: now(),
+        }),
+      ),
+    );
+
+    await expect(
+      repository.join({
+        channelId: "full-channel",
+        userId: "overflow-user",
+        socketId: "overflow-socket",
+        newSessionId: "overflow-session",
+        now: now(),
+      }),
+    ).resolves.toEqual({ kind: "full" });
+    await expect(repository.participants("full-channel")).resolves.toHaveLength(20);
+  });
+
   async function claim(channelId: string, instanceId = "instance"): Promise<void> {
     await repository.claimRoom(channelId, {
       instanceId,
