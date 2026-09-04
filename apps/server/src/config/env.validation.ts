@@ -64,6 +64,34 @@ export class EnvironmentVariables {
   REFRESH_TOKEN_TTL_DAYS: number = 30;
 
   /**
+   * How long a resolved permission answer may be reused, in seconds.
+   *
+   * Kept short even though domain events invalidate the cache explicitly: the number is a
+   * statement about how much we trust pub/sub delivery, and a lost event should cost a
+   * minute of staleness rather than an unbounded one.
+   *
+   * At least one second: Redis rejects `EX 0`, so a zero here would not disable the cache,
+   * it would make every write fail and log.
+   */
+  @IsInt()
+  @Min(1)
+  @Max(3600)
+  PERMISSION_CACHE_TTL: number = 60;
+
+  /**
+   * Number of reverse proxies in front of the server, or 0 when it is exposed directly.
+   *
+   * The rate limiter keys on the client address. Behind nginx without this, every request
+   * arrives from the proxy, so one abusive client spends the login allowance of everyone
+   * else. Counting hops rather than trusting `X-Forwarded-For` wholesale matters: a client
+   * can forge that header, and a blanket trust would let it forge its own address.
+   */
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  TRUSTED_PROXY_HOPS: number = 0;
+
+  /**
    * Off in local development, where there is no TLS to carry a Secure cookie.
    *
    * Parsed explicitly because implicit conversion runs `Boolean("false")`, which is `true`
