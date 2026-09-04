@@ -188,6 +188,45 @@ describe("servers, channels and permissions", () => {
     expect(denied.body.errorCode).toBe("NOT_FOUND");
   });
 
+  it("stops serving the cached permissions of a member the moment the override lands", async () => {
+    const member = await joinAsNewMember();
+    const view = await http()
+      .get(`/servers/${serverId}`)
+      .set("Authorization", `Bearer ${member.token}`)
+      .expect(200);
+
+    const target = view.body.channels[0] as { id: string };
+
+    // Warms the channel-level entry: without this read there is nothing cached to go
+    // stale, and the assertion below would hold even with invalidation removed.
+    await http()
+      .get(`/channels/${target.id}/messages`)
+      .set("Authorization", `Bearer ${member.token}`)
+      .expect(200);
+
+    await http()
+      .put(`/channels/${target.id}/overrides`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({
+        memberId: member.memberId,
+        allow: "0",
+        deny: serializePermissions(Permission.ViewChannel),
+      })
+      .expect(204);
+
+    // No wait between the two requests on purpose. This pins the invalidation itself:
+    // remove the version bump and the stale entry answers 200 here. It does not pin the
+    // ordering — a bump delivered a pub/sub round trip late still lands before the next
+    // request on one machine. The guarantee that it runs before `publish` returns is
+    // asserted where it lives, in the domain event bus test.
+    const denied = await http()
+      .get(`/channels/${target.id}/messages`)
+      .set("Authorization", `Bearer ${member.token}`)
+      .expect(404);
+
+    expect(denied.body.errorCode).toBe("NOT_FOUND");
+  });
+
   it("restores access when a role override allows what @everyone denies", async () => {
     const member = await joinAsNewMember();
     const view = await http()
@@ -334,6 +373,33 @@ describe("servers, channels and permissions", () => {
       .post(`/invites/${invite.body.code}/join`)
       .set("Authorization", `Bearer ${token}`)
       .expect(404);
+  });
+
+  it("lets a joined member in immediately after being refused as an outsider", async () => {
+    const invite = await http()
+      .post(`/servers/${serverId}/invites`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({})
+      .expect(201);
+
+    const outsider = await factories.outsider();
+    const token = await tokenFor(outsider);
+
+    // Caches the "not a member" answer. Without this refusal first, joining would have
+    // nothing stale to invalidate and the assertion below would pass regardless.
+    await http().get(`/servers/${serverId}`).set("Authorization", `Bearer ${token}`).expect(404);
+
+    await http()
+      .post(`/invites/${invite.body.code}/join`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const view = await http()
+      .get(`/servers/${serverId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(view.body.id).toBe(serverId);
   });
 
   it("joins an already registered user through an invite", async () => {
