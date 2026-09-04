@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { RateLimitModule } from "../../common/rate-limit/rate-limit.module.js";
 import { AuthModule } from "../auth/auth.module.js";
 import { PermissionsModule } from "../permissions/permissions.module.js";
 import { CategoriesController } from "./categories.controller.js";
@@ -16,7 +17,7 @@ import { ServerViewService } from "./server-view.service.js";
 import { ServersController } from "./servers.controller.js";
 
 @Module({
-  imports: [AuthModule, PermissionsModule],
+  imports: [AuthModule, PermissionsModule, RateLimitModule],
   controllers: [
     ServersController,
     ChannelsController,

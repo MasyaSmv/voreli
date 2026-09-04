@@ -1,4 +1,4 @@
-import { type CanActivate, type ExecutionContext, Injectable } from "@nestjs/common";
+import { type CanActivate, type ExecutionContext, Inject, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { hasPermission, Permission } from "@voreli/shared";
 
@@ -7,7 +7,11 @@ import {
   MissingPermissionError,
   ResourceNotVisibleError,
 } from "./errors/permission-errors.js";
-import { PermissionResolver, type ResolvedMembership } from "./permission-resolver.service.js";
+import {
+  PERMISSION_RESOLVER,
+  type PermissionResolverContract,
+  type ResolvedMembership,
+} from "./permission-resolver.contract.js";
 import { REQUIRED_PERMISSION } from "./require-permission.decorator.js";
 import { ResourceLocator } from "./resource-locator.service.js";
 
@@ -31,7 +35,7 @@ export interface RequestWithPermissions extends AuthenticatedRequest {
 export class PermissionGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly resolver: PermissionResolver,
+    @Inject(PERMISSION_RESOLVER) private readonly resolver: PermissionResolverContract,
     private readonly locator: ResourceLocator,
   ) {}
 

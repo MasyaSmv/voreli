@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { Role } from "@prisma/client";
 import { ALL_PERMISSIONS, hasPermission, Permission } from "@voreli/shared";
 
+import { DOMAIN_EVENT_BUS, type DomainEventBus } from "../../common/events/domain-event-bus.js";
 import { ID_GENERATOR, type IdGenerator } from "../../common/services/id-generator.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import {
@@ -43,6 +44,7 @@ export class RoleManagementService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
+    @Inject(DOMAIN_EVENT_BUS) private readonly events: DomainEventBus,
   ) {}
 
   async create(serverId: string, callerMask: bigint, input: RoleWriteInput): Promise<Role> {
@@ -63,6 +65,7 @@ export class RoleManagementService {
 
   async update(roleId: string, callerMask: bigint, input: RoleWriteInput): Promise<Role> {
     const role = await this.roleOrFail(roleId);
+    const affectedUserIds = await this.affectedUsersOfRole(role);
 
     if (input.permissions !== undefined) {
       this.assertGrantable(callerMask, input.permissions);
@@ -71,7 +74,7 @@ export class RoleManagementService {
       this.assertGrantable(callerMask, role.permissions & ~input.permissions);
     }
 
-    return this.prisma.db.role.update({
+    const updated = await this.prisma.db.role.update({
       where: { id: roleId },
       data: {
         ...(input.name === undefined ? {} : { name: input.name.trim() }),
@@ -80,6 +83,10 @@ export class RoleManagementService {
         ...(input.position === undefined ? {} : { position: input.position }),
       },
     });
+
+    await this.publishRoleChanges(role.serverId, affectedUserIds);
+
+    return updated;
   }
 
   async remove(roleId: string): Promise<void> {
@@ -89,7 +96,9 @@ export class RoleManagementService {
       throw new DefaultRoleImmutableError(roleId);
     }
 
+    const affectedUserIds = await this.affectedUsersOfRole(role);
     await this.prisma.db.role.delete({ where: { id: roleId } });
+    await this.publishRoleChanges(role.serverId, affectedUserIds);
   }
 
   async assignTo(memberId: string, roleId: string, callerMask: bigint): Promise<void> {
@@ -109,10 +118,17 @@ export class RoleManagementService {
       create: { memberId, roleId },
       update: {},
     });
+    await this.events.publish("member.roles.changed", {
+      serverId: member.serverId,
+      userId: member.userId,
+    });
   }
 
   async revokeFrom(memberId: string, roleId: string, callerMask: bigint): Promise<void> {
-    const role = await this.roleOrFail(roleId);
+    const [role, member] = await Promise.all([
+      this.roleOrFail(roleId),
+      this.memberOrFail(memberId),
+    ]);
 
     if (role.isDefault) {
       throw new DefaultRoleImmutableError(roleId);
@@ -121,6 +137,10 @@ export class RoleManagementService {
     this.assertGrantable(callerMask, role.permissions);
 
     await this.prisma.db.memberRole.deleteMany({ where: { memberId, roleId } });
+    await this.events.publish("member.roles.changed", {
+      serverId: member.serverId,
+      userId: member.userId,
+    });
   }
 
   async setOverride(channelId: string, callerMask: bigint, input: OverrideInput): Promise<void> {
@@ -164,6 +184,7 @@ export class RoleManagementService {
         },
         update: { allow: input.allow, deny: input.deny },
       });
+      await this.events.publish("channel.overrides.changed", { channelId });
 
       return;
     }
@@ -185,12 +206,14 @@ export class RoleManagementService {
       },
       update: { allow: input.allow, deny: input.deny },
     });
+    await this.events.publish("channel.overrides.changed", { channelId });
   }
 
   async clearOverride(channelId: string, targetId: string): Promise<void> {
     await this.prisma.db.channelOverride.deleteMany({
       where: { channelId, OR: [{ roleId: targetId }, { memberId: targetId }] },
     });
+    await this.events.publish("channel.overrides.changed", { channelId });
   }
 
   /**
@@ -219,10 +242,12 @@ export class RoleManagementService {
     return role;
   }
 
-  private async memberOrFail(memberId: string): Promise<{ id: string; serverId: string }> {
+  private async memberOrFail(
+    memberId: string,
+  ): Promise<{ id: string; serverId: string; userId: string }> {
     const member = await this.prisma.db.member.findUnique({
       where: { id: memberId },
-      select: { id: true, serverId: true },
+      select: { id: true, serverId: true, userId: true },
     });
 
     if (!member) {
@@ -230,6 +255,30 @@ export class RoleManagementService {
     }
 
     return member;
+  }
+
+  private async affectedUsersOfRole(role: Role): Promise<readonly string[]> {
+    if (role.isDefault) {
+      const members = await this.prisma.db.member.findMany({
+        where: { serverId: role.serverId },
+        select: { userId: true },
+      });
+
+      return members.map((member) => member.userId);
+    }
+
+    const links = await this.prisma.db.memberRole.findMany({
+      where: { roleId: role.id },
+      select: { member: { select: { userId: true } } },
+    });
+
+    return links.map((link) => link.member.userId);
+  }
+
+  private async publishRoleChanges(serverId: string, userIds: readonly string[]): Promise<void> {
+    await Promise.all(
+      userIds.map((userId) => this.events.publish("member.roles.changed", { serverId, userId })),
+    );
   }
 
   private async nextPosition(serverId: string): Promise<number> {

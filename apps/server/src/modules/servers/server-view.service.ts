@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import {
   type CategoryView,
   type ChannelView,
@@ -12,9 +12,10 @@ import {
 
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import {
-  PermissionResolver,
+  PERMISSION_RESOLVER,
+  type PermissionResolverContract,
   type ResolvedMembership,
-} from "../permissions/permission-resolver.service.js";
+} from "../permissions/permission-resolver.contract.js";
 import { ResourceNotVisibleError } from "../permissions/errors/permission-errors.js";
 
 /**
@@ -27,7 +28,7 @@ import { ResourceNotVisibleError } from "../permissions/errors/permission-errors
 export class ServerViewService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissions: PermissionResolver,
+    @Inject(PERMISSION_RESOLVER) private readonly permissions: PermissionResolverContract,
   ) {}
 
   async listFor(userId: string): Promise<readonly ServerSummary[]> {
