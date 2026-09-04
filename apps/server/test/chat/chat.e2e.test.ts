@@ -46,6 +46,7 @@ describe("realtime chat", () => {
     bob = await factories.member(seeded);
 
     await harness.listen();
+    await harness.resetRateLimits();
 
     aliceToken = await login(alice);
     bobToken = await login(bob);

@@ -48,3 +48,12 @@ export class VoiceCannotConsumeError extends DomainError {
     super("Producer cannot be consumed in this voice session");
   }
 }
+
+export class VoiceSpeakForbiddenError extends DomainError {
+  static readonly CODE = "VOICE_SPEAK_FORBIDDEN";
+  readonly errorCode = VoiceSpeakForbiddenError.CODE;
+
+  constructor() {
+    super("Speaking in this voice channel is not allowed");
+  }
+}

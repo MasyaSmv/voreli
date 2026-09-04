@@ -69,7 +69,7 @@ describe("media session ownership", () => {
     registry.register("consumer-session", "room-two", secondHandle);
 
     const send = await registry.createTransport("producer-session", "send");
-    await registry.createTransport("consumer-session", "recv");
+    const recv = await registry.createTransport("consumer-session", "recv");
     const producer = await registry.createProducer(
       "producer-session",
       send.id,
@@ -79,6 +79,7 @@ describe("media session ownership", () => {
     );
     const consumer = await registry.createConsumer(
       "consumer-session",
+      recv.id,
       producer.id,
       firstHandle.router.rtpCapabilities,
     );
@@ -87,7 +88,12 @@ describe("media session ownership", () => {
     await registry.resumeConsumer("consumer-session", consumer.id, false);
     expect(consumer.paused).toBe(false);
     await expect(
-      registry.createConsumer("consumer-session", producer.id, firstHandle.router.rtpCapabilities),
+      registry.createConsumer(
+        "consumer-session",
+        recv.id,
+        producer.id,
+        firstHandle.router.rtpCapabilities,
+      ),
     ).rejects.toBeInstanceOf(VoiceMediaObjectLimitError);
 
     const producerClosedAtConsumer = new Promise<void>((resolve) => {
@@ -109,7 +115,7 @@ describe("media session ownership", () => {
     registry.register("target-session", "target-room", targetHandle);
 
     const send = await registry.createTransport("source-session", "send");
-    await registry.createTransport("target-session", "recv");
+    const recv = await registry.createTransport("target-session", "recv");
     const producer = await registry.createProducer(
       "source-session",
       send.id,
@@ -119,7 +125,12 @@ describe("media session ownership", () => {
     );
 
     await expect(
-      registry.createConsumer("target-session", producer.id, targetHandle.router.rtpCapabilities),
+      registry.createConsumer(
+        "target-session",
+        recv.id,
+        producer.id,
+        targetHandle.router.rtpCapabilities,
+      ),
     ).rejects.toBeInstanceOf(VoiceCannotConsumeError);
 
     registry.closeSession("source-session");

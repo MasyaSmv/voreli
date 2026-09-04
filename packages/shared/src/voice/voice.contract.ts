@@ -86,6 +86,7 @@ export interface CreateProducerResponse {
 }
 
 export interface CreateConsumerPayload {
+  readonly transportId: string;
   readonly producerId: string;
   readonly rtpCapabilities: types.RtpCapabilities;
 }

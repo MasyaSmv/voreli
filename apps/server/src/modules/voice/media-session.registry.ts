@@ -1,4 +1,4 @@
-import { Injectable, type OnModuleDestroy } from "@nestjs/common";
+import { Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import type { TransportDirection } from "@voreli/shared";
 import type { types } from "mediasoup";
 
@@ -47,6 +47,7 @@ type TransportFailureHandler = (sessionId: string) => Promise<void> | void;
 
 @Injectable()
 export class MediaSessionRegistry implements OnModuleDestroy {
+  private readonly logger = new Logger(MediaSessionRegistry.name);
   private readonly sessions = new Map<string, MediaSession>();
   private readonly producers = new Map<string, RoomProducer>();
   private readonly failureHandlers = new Set<TransportFailureHandler>();
@@ -156,11 +157,17 @@ export class MediaSessionRegistry implements OnModuleDestroy {
 
   async createConsumer(
     sessionId: string,
+    transportId: string,
     producerId: string,
     rtpCapabilities: types.RtpCapabilities,
   ): Promise<types.Consumer> {
     const session = this.session(sessionId);
+    const transport = this.ownedTransport(sessionId, transportId);
     const source = this.producers.get(producerId);
+
+    if (transport.direction !== "recv") {
+      throw new VoiceInvalidTransportDirectionError();
+    }
 
     if (
       !source ||
@@ -170,17 +177,15 @@ export class MediaSessionRegistry implements OnModuleDestroy {
       throw new VoiceCannotConsumeError();
     }
 
-    const recv = [...session.transports.values()].find((entry) => entry.direction === "recv");
-
-    if (!recv) {
-      throw new VoiceMediaObjectNotFoundError();
-    }
-
     if ([...session.consumers.values()].some((owned) => owned.producerId === producerId)) {
       throw new VoiceMediaObjectLimitError("consumer");
     }
 
-    const consumer = await recv.transport.consume({ producerId, rtpCapabilities, paused: true });
+    const consumer = await transport.transport.consume({
+      producerId,
+      rtpCapabilities,
+      paused: true,
+    });
     const owned: OwnedConsumer = { consumer, producerId, clientReady: false };
     session.consumers.set(consumer.id, owned);
     consumer.observer.once("close", () => session.consumers.delete(consumer.id));
@@ -218,6 +223,12 @@ export class MediaSessionRegistry implements OnModuleDestroy {
       producerId: producer.id,
       kind: producer.kind,
     }));
+  }
+
+  closeProducer(sessionId: string, producerId: string): void {
+    const producer = this.session(sessionId).producers.get(producerId);
+    if (!producer) throw new VoiceMediaObjectNotFoundError();
+    producer.close();
   }
 
   closeSession(sessionId: string): void {
@@ -281,12 +292,26 @@ export class MediaSessionRegistry implements OnModuleDestroy {
 
     this.failedSessions.add(sessionId);
 
-    if (!transport.closed) {
+    if (this.failureHandlers.size === 0 && !transport.closed) {
       transport.close();
+      return;
     }
 
     for (const handler of this.failureHandlers) {
-      void handler(sessionId);
+      void Promise.resolve()
+        .then(() => handler(sessionId))
+        .catch((error: unknown) => {
+          this.logger.error({
+            message: "Failed to close voice session after transport failure",
+            error,
+            sessionId,
+            transportId: transport.id,
+            operation: "handleVoiceTransportFailure",
+          });
+        })
+        .finally(() => {
+          if (!transport.closed) transport.close();
+        });
     }
   }
 }

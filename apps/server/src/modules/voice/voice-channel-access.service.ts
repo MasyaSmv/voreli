@@ -38,4 +38,16 @@ export class VoiceChannelAccessService {
     const resolved = await this.permissions.forChannel(userId, channelId);
     return resolved !== null && hasPermission(resolved.channelPermissions, Permission.Speak);
   }
+
+  async canConnect(userId: string, channelId: string): Promise<boolean> {
+    const [channel, resolved] = await Promise.all([
+      this.prisma.db.channel.findUnique({ where: { id: channelId }, select: { type: true } }),
+      this.permissions.forChannel(userId, channelId),
+    ]);
+    return (
+      channel?.type === ChannelType.VOICE &&
+      resolved !== null &&
+      hasPermission(resolved.channelPermissions, Permission.Connect)
+    );
+  }
 }
