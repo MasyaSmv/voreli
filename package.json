@@ -12,7 +12,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "verify": "turbo run lint typecheck test",
+    "verify": "pnpm format:check && turbo run lint typecheck test",
     "e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
