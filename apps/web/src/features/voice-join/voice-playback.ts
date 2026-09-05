@@ -36,13 +36,21 @@ export class VoicePlayback {
     }
   }
 
-  async resume(): Promise<readonly string[]> {
-    const consumerIds: string[] = [];
-    for (const received of this.received.values()) {
-      await received.element.play();
-      consumerIds.push(received.consumer.id);
-    }
-    return consumerIds;
+  /**
+   * Listed rather than resumed in bulk: the caller has to tell the server about each
+   * consumer right after that consumer's element starts playing. Resuming them all first
+   * and reporting afterwards loses the ones already playing when a later `play()` is
+   * refused — they stay paused on the server while the browser is ready for them.
+   */
+  entries(): readonly { readonly producerId: string; readonly consumerId: string }[] {
+    return [...this.received].map(([producerId, received]) => ({
+      producerId,
+      consumerId: received.consumer.id,
+    }));
+  }
+
+  async play(producerId: string): Promise<void> {
+    await this.received.get(producerId)?.element.play();
   }
 
   close(producerId: string): void {

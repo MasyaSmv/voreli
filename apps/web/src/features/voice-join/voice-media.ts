@@ -108,8 +108,14 @@ export class VoiceMedia {
     await this.consume(this.producer.id);
   }
 
+  /**
+   * Each consumer is played and reported as one step. A stream whose playback the browser
+   * refuses must not take down the ones that already started: they are audible, and the
+   * server has to be told so it stops holding them paused.
+   */
   async resumeAudio(): Promise<void> {
-    for (const consumerId of await this.playback.resume()) {
+    for (const { producerId, consumerId } of this.playback.entries()) {
+      await this.playback.play(producerId);
       await this.signaling.request<null>(VoiceClientEvent.ResumeConsumer, { consumerId });
     }
   }
