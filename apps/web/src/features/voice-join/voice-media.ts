@@ -114,8 +114,7 @@ export class VoiceMedia {
    * server has to be told so it stops holding them paused.
    */
   async resumeAudio(): Promise<void> {
-    for (const { producerId, consumerId } of this.playback.entries()) {
-      await this.playback.play(producerId);
+    for await (const consumerId of this.playback.resume()) {
       await this.signaling.request<null>(VoiceClientEvent.ResumeConsumer, { consumerId });
     }
   }

@@ -37,20 +37,18 @@ export class VoicePlayback {
   }
 
   /**
-   * Listed rather than resumed in bulk: the caller has to tell the server about each
-   * consumer right after that consumer's element starts playing. Resuming them all first
-   * and reporting afterwards loses the ones already playing when a later `play()` is
-   * refused — they stay paused on the server while the browser is ready for them.
+   * Plays each element and yields its consumer id, then waits for the caller to tell the
+   * server before moving on.
+   *
+   * A generator rather than a returned list because the two halves must stay paired: play
+   * them all first and report afterwards, and a single refused `play()` leaves the streams
+   * that already started paused on the server while the browser is ready for them.
    */
-  entries(): readonly { readonly producerId: string; readonly consumerId: string }[] {
-    return [...this.received].map(([producerId, received]) => ({
-      producerId,
-      consumerId: received.consumer.id,
-    }));
-  }
-
-  async play(producerId: string): Promise<void> {
-    await this.received.get(producerId)?.element.play();
+  async *resume(): AsyncGenerator<string> {
+    for (const received of this.received.values()) {
+      await received.element.play();
+      yield received.consumer.id;
+    }
   }
 
   close(producerId: string): void {
