@@ -1,14 +1,18 @@
-import { CHAT_NAMESPACE, ClientEvent } from "@voreli/shared";
+import { CHAT_NAMESPACE, ClientEvent, VOICE_NAMESPACE, VoiceClientEvent } from "@voreli/shared";
 import { io, type Socket } from "socket.io-client";
 
 import { serverUrl } from "../config/env";
 import { getAccessToken, observeAccessToken } from "./http";
 
-let socket: Socket | null = null;
+let chat: Socket | null = null;
+let voice: Socket | null = null;
 
 observeAccessToken((token) => {
-  if (token !== null && socket?.connected === true) {
-    socket.emit(ClientEvent.RefreshAuth, { accessToken: token });
+  if (token !== null && chat?.connected === true) {
+    chat.emit(ClientEvent.RefreshAuth, { accessToken: token });
+  }
+  if (token !== null && voice?.connected === true) {
+    voice.emit(VoiceClientEvent.RefreshAuth, { accessToken: token });
   }
 });
 
@@ -19,20 +23,34 @@ observeAccessToken((token) => {
  * before login would hand the server an empty token and be refused.
  */
 export function chatSocket(): Socket {
-  if (socket === null) {
-    socket = io(`${serverUrl()}${CHAT_NAMESPACE}`, {
-      autoConnect: false,
-      transports: ["websocket"],
-      auth: (callback: (data: Record<string, unknown>) => void) => {
-        callback({ token: getAccessToken() ?? "" });
-      },
-    });
+  if (chat === null) {
+    chat = createSocket(CHAT_NAMESPACE);
   }
 
-  return socket;
+  return chat;
+}
+
+export function voiceSocket(): Socket {
+  if (voice === null) {
+    voice = createSocket(VOICE_NAMESPACE);
+  }
+
+  return voice;
+}
+
+function createSocket(namespace: string): Socket {
+  return io(`${serverUrl()}${namespace}`, {
+    autoConnect: false,
+    transports: ["websocket"],
+    auth: (callback: (data: Record<string, unknown>) => void) => {
+      callback({ token: getAccessToken() ?? "" });
+    },
+  });
 }
 
 export function disconnectSocket(): void {
-  socket?.disconnect();
-  socket = null;
+  chat?.disconnect();
+  voice?.disconnect();
+  chat = null;
+  voice = null;
 }

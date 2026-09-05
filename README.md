@@ -26,15 +26,15 @@ Voreli решает ту же задачу, что Discord, но в границ
 
 ## Технологии
 
-| Слой | Выбор |
-|---|---|
-| Медиа | [mediasoup](https://mediasoup.org/) — SFU, голос и видео через сервер |
-| Бэкенд | NestJS (TypeScript), Socket.IO для сигналинга и чата |
-| Данные | PostgreSQL + Prisma, Redis для presence и состояния голоса |
-| Файлы | S3-совместимое хранилище |
-| Клиент | React + TypeScript, Vite, Zustand, Tailwind CSS |
-| Десктоп | Tauri 2 — позже, поверх того же клиента |
-| Монорепо | pnpm workspaces + Turborepo |
+| Слой     | Выбор                                                                 |
+| -------- | --------------------------------------------------------------------- |
+| Медиа    | [mediasoup](https://mediasoup.org/) — SFU, голос и видео через сервер |
+| Бэкенд   | NestJS (TypeScript), Socket.IO для сигналинга и чата                  |
+| Данные   | PostgreSQL + Prisma, Redis для presence и состояния голоса            |
+| Файлы    | S3-совместимое хранилище                                              |
+| Клиент   | React + TypeScript, Vite, Zustand, Tailwind CSS                       |
+| Десктоп  | Tauri 2 — позже, поверх того же клиента                               |
+| Монорепо | pnpm workspaces + Turborepo                                           |
 
 Почему SFU, а не P2P: при P2P каждый участник шлёт свой поток каждому, и на пятом
 человеке канал пользователя заканчивается. SFU принимает один поток и раздаёт остальным.

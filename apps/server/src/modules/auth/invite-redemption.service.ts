@@ -56,7 +56,10 @@ export class InviteRedemptionService {
     return membership;
   }
 
-  private async join(code: string, userId: string): Promise<{ serverId: string; memberId: string }> {
+  private async join(
+    code: string,
+    userId: string,
+  ): Promise<{ serverId: string; memberId: string }> {
     try {
       return await this.joinOnce(code, userId);
     } catch (error: unknown) {
@@ -64,7 +67,9 @@ export class InviteRedemptionService {
       // insert, and one loses on the unique key. That is not a failure — the state they
       // asked for exists — so read it back instead of surfacing a database error.
       const existing = isDuplicateMemberError(error)
-        ? await this.prisma.db.member.findFirst({ where: { userId, server: { invites: { some: { code } } } } })
+        ? await this.prisma.db.member.findFirst({
+            where: { userId, server: { invites: { some: { code } } } },
+          })
         : null;
 
       if (!existing) {
@@ -146,9 +151,7 @@ export class InviteRedemptionService {
   }
 
   /** Reads the invite and refuses the codes a caller may never use. */
-  private async loadUsable(
-    code: string,
-  ): Promise<{ serverId: string; maxUses: number | null }> {
+  private async loadUsable(code: string): Promise<{ serverId: string; maxUses: number | null }> {
     const invite = await this.prisma.db.invite.findUnique({ where: { code } });
 
     if (!invite) {

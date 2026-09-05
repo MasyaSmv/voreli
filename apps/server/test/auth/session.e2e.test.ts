@@ -121,20 +121,11 @@ describe("login, refresh and sessions", () => {
     const login = await logIn();
     const accessToken = login.body.accessToken as string;
 
-    await http()
-      .get(AUTH_ROUTES.me)
-      .set("Authorization", `Bearer ${accessToken}`)
-      .expect(200);
+    await http().get(AUTH_ROUTES.me).set("Authorization", `Bearer ${accessToken}`).expect(200);
 
-    await http()
-      .post(AUTH_ROUTES.logout)
-      .set("Cookie", refreshCookieOf(login))
-      .expect(204);
+    await http().post(AUTH_ROUTES.logout).set("Cookie", refreshCookieOf(login)).expect(204);
 
-    await http()
-      .get(AUTH_ROUTES.me)
-      .set("Authorization", `Bearer ${accessToken}`)
-      .expect(401);
+    await http().get(AUTH_ROUTES.me).set("Authorization", `Bearer ${accessToken}`).expect(401);
   });
 
   it("lists sessions and marks the current one", async () => {

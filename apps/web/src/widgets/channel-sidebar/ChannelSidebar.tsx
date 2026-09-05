@@ -1,5 +1,8 @@
 import type { CategoryView, ChannelView, ServerView, UnreadCount } from "@voreli/shared";
 
+import { useSession } from "../../entities/session/session.store";
+import { useVoice } from "../../entities/voice/voice.store";
+
 interface ChannelSidebarProps {
   readonly server: ServerView;
   readonly unread: readonly UnreadCount[];
@@ -11,12 +14,10 @@ interface ChannelSidebarProps {
  * Channels grouped by category. Channels the member may not view never arrive from the
  * server, so there is nothing to filter here — and nothing to accidentally reveal.
  */
-export function ChannelSidebar({
-  server,
-  unread,
-  activeChannelId,
-  onSelect,
-}: ChannelSidebarProps) {
+export function ChannelSidebar({ server, unread, activeChannelId, onSelect }: ChannelSidebarProps) {
+  const voiceChannelId = useVoice((state) => state.channelId);
+  const voiceParticipants = useVoice((state) => state.participants);
+  const currentUserId = useSession((state) => state.user?.id);
   const unreadByChannel = new Map(unread.map((entry) => [entry.channelId, entry.count]));
   const uncategorised = server.channels.filter((channel) => channel.categoryId === null);
 
@@ -32,6 +33,9 @@ export function ChannelSidebar({
           unread={unreadByChannel}
           activeChannelId={activeChannelId}
           onSelect={onSelect}
+          voiceChannelId={voiceChannelId}
+          voiceParticipants={voiceParticipants}
+          currentUserId={currentUserId}
         />
       ))}
 
@@ -42,6 +46,9 @@ export function ChannelSidebar({
           unread={unreadByChannel}
           activeChannelId={activeChannelId}
           onSelect={onSelect}
+          voiceChannelId={voiceChannelId}
+          voiceParticipants={voiceParticipants}
+          currentUserId={currentUserId}
         />
       )}
     </nav>
@@ -54,6 +61,9 @@ interface CategoryBlockProps {
   readonly unread: ReadonlyMap<string, number>;
   readonly activeChannelId: string | null;
   readonly onSelect: (channel: ChannelView) => void;
+  readonly voiceChannelId: string | null;
+  readonly voiceParticipants: ReturnType<typeof useVoice.getState>["participants"];
+  readonly currentUserId: string | undefined;
 }
 
 function CategoryBlock({
@@ -62,6 +72,9 @@ function CategoryBlock({
   unread,
   activeChannelId,
   onSelect,
+  voiceChannelId,
+  voiceParticipants,
+  currentUserId,
 }: CategoryBlockProps) {
   if (channels.length === 0) {
     return null;
@@ -99,6 +112,17 @@ function CategoryBlock({
                   </span>
                 ) : null}
               </button>
+              {channel.id === voiceChannelId ? (
+                <ul className="ml-7 space-y-1 py-1 text-xs text-white/45">
+                  {voiceParticipants.map((participant) => (
+                    <li key={participant.userId}>
+                      {participant.userId === currentUserId
+                        ? "Вы"
+                        : `Участник ${participant.userId.slice(0, 6)}`}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           );
         })}

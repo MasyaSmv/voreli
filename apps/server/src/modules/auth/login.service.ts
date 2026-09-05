@@ -1,10 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { User } from "@prisma/client";
 
-import {
-  PASSWORD_HASHER,
-  type PasswordHasher,
-} from "../../common/services/password-hasher.js";
+import { PASSWORD_HASHER, type PasswordHasher } from "../../common/services/password-hasher.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import { InvalidCredentialsError } from "./errors/auth-errors.js";
 

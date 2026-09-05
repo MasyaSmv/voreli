@@ -96,7 +96,9 @@ describe("servers, channels and permissions", () => {
       .expect(200);
 
     expect(view.body.isOwner).toBe(true);
-    expect(view.body.roles.filter((role: { isDefault: boolean }) => role.isDefault)).toHaveLength(1);
+    expect(view.body.roles.filter((role: { isDefault: boolean }) => role.isDefault)).toHaveLength(
+      1,
+    );
     expect(view.body.categories).toHaveLength(1);
     expect(view.body.channels).toHaveLength(2);
     expect(view.body.channels.map((channel: { type: string }) => channel.type).sort()).toEqual([

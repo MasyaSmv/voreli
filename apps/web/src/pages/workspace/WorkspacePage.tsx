@@ -3,9 +3,11 @@ import type { ChannelView } from "@voreli/shared";
 import { useState } from "react";
 
 import { useSession } from "../../entities/session/session.store";
+import { voiceSession } from "../../features/voice-join/voice-session";
 import { fetchMyServers, fetchServer, fetchUnread } from "../../entities/server/server.api";
 import { ChannelSidebar } from "../../widgets/channel-sidebar/ChannelSidebar";
 import { ChatPanel } from "../../widgets/chat/ChatPanel";
+import { VoicePanel } from "../../widgets/voice-panel/VoicePanel";
 
 /** The main screen: servers on the left, channels next to them, the conversation filling the rest. */
 export function WorkspacePage() {
@@ -36,9 +38,7 @@ export function WorkspacePage() {
   });
 
   const channelId =
-    pickedChannelId ??
-    server.data?.channels.find((channel) => channel.type === "TEXT")?.id ??
-    null;
+    pickedChannelId ?? server.data?.channels.find((channel) => channel.type === "TEXT")?.id ?? null;
 
   const activeChannel: ChannelView | null =
     server.data?.channels.find((channel) => channel.id === channelId) ?? null;
@@ -71,6 +71,9 @@ export function WorkspacePage() {
           activeChannelId={channelId}
           onSelect={(channel) => {
             setPickedChannelId(channel.id);
+            if (channel.type === "VOICE") {
+              void voiceSession.join(channel.id).catch(() => undefined);
+            }
           }}
         />
       ) : (
@@ -82,14 +85,23 @@ export function WorkspacePage() {
       )}
 
       <main className="flex flex-1 flex-col">
-        <ChatPanel channel={activeChannel} />
+        {activeChannel?.type === "VOICE" ? (
+          <VoicePanel channel={activeChannel} />
+        ) : (
+          <ChatPanel channel={activeChannel} />
+        )}
       </main>
 
       <footer className="absolute bottom-3 left-3 flex items-center gap-2 text-xs text-white/40">
         <span>{user?.displayName}</span>
         <button
           type="button"
-          onClick={() => void logOut()}
+          onClick={() =>
+            void voiceSession
+              .leave()
+              .catch(() => undefined)
+              .then(() => logOut())
+          }
           className="underline-offset-4 hover:underline"
         >
           выйти

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { NodeEnv, validateEnv } from "./env.validation.js";
+import { hostname } from "node:os";
+
+import { MediasoupLogLevel, NodeEnv, validateEnv } from "./env.validation.js";
 
 /** The two variables that have no default, because guessing either one is dangerous. */
 const required = {
@@ -16,6 +18,11 @@ describe("validateEnv", () => {
     expect(env.PORT).toBe(3000);
     expect(env.ACCESS_TOKEN_TTL).toBe(900);
     expect(env.COOKIE_SECURE).toBe(false);
+    expect(env.MEDIASOUP_ANNOUNCED_IP).toBe("127.0.0.1");
+    expect(env.MEDIASOUP_RTC_MIN_PORT).toBe(40000);
+    expect(env.MEDIASOUP_LOG_LEVEL).toBe(MediasoupLogLevel.Warn);
+    expect(env.INSTANCE_ID).toBe(hostname());
+    expect(env.VOICE_MAX_PARTICIPANTS).toBe(20);
   });
 
   it("coerces PORT from the string the environment always gives us", () => {
@@ -42,5 +49,22 @@ describe("validateEnv", () => {
     // Boolean("false") is true; a security flag must never be parsed that way.
     expect(validateEnv({ ...required, COOKIE_SECURE: "false" }).COOKIE_SECURE).toBe(false);
     expect(validateEnv({ ...required, COOKIE_SECURE: "true" }).COOKIE_SECURE).toBe(true);
+  });
+
+  it("treats intentionally empty optional mediasoup values as defaults", () => {
+    const env = validateEnv({ ...required, MEDIASOUP_MAX_WORKERS: "", INSTANCE_ID: "" });
+
+    expect(env.MEDIASOUP_MAX_WORKERS).toBeUndefined();
+    expect(env.INSTANCE_ID).toBe(hostname());
+  });
+
+  it("rejects a mediasoup port range written backwards", () => {
+    expect(() =>
+      validateEnv({
+        ...required,
+        MEDIASOUP_RTC_MIN_PORT: "40100",
+        MEDIASOUP_RTC_MAX_PORT: "40000",
+      }),
+    ).toThrow(/MEDIASOUP_RTC_MIN_PORT/);
   });
 });

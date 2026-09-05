@@ -13,7 +13,8 @@ export default defineConfig(({ mode }) => {
   // and never into process.env, so a config that reads process.env silently falls back to
   // its default — which is how the dev proxy ended up pointing at the wrong port.
   const env = loadEnv(mode, envDir, "");
-  const proxyTarget = env["VITE_DEV_PROXY_TARGET"] ?? "http://localhost:3000";
+  const proxyTarget =
+    process.env["VITE_DEV_PROXY_TARGET"] ?? env["VITE_DEV_PROXY_TARGET"] ?? "http://localhost:3000";
 
   return {
     plugins: [react(), tailwind()],

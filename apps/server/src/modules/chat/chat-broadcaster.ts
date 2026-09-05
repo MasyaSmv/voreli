@@ -1,9 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import {
-  type MessageDeletedEvent,
-  type MessageView,
-  ServerEvent,
-} from "@voreli/shared";
+import { type MessageDeletedEvent, type MessageView, ServerEvent } from "@voreli/shared";
 import type { Namespace } from "socket.io";
 
 /** Socket.IO room holding everyone currently looking at a channel. */

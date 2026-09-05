@@ -46,6 +46,7 @@ describe("realtime chat", () => {
     bob = await factories.member(seeded);
 
     await harness.listen();
+    await harness.resetRateLimits();
 
     aliceToken = await login(alice);
     bobToken = await login(bob);
@@ -659,9 +660,9 @@ describe("realtime chat", () => {
       .set("Authorization", `Bearer ${bobToken}`)
       .expect(200);
 
-    expect(before.body.channels.some((entry: { channelId: string }) => entry.channelId === channelId)).toBe(
-      true,
-    );
+    expect(
+      before.body.channels.some((entry: { channelId: string }) => entry.channelId === channelId),
+    ).toBe(true);
 
     await request(harness.app.getHttpServer())
       .put(`/channels/${channelId}/overrides`)

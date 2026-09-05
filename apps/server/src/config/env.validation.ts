@@ -1,8 +1,12 @@
+import { hostname } from "node:os";
+
 import { plainToInstance, Transform } from "class-transformer";
 import {
   IsBoolean,
   IsEnum,
+  IsIP,
   IsInt,
+  IsOptional,
   IsString,
   Max,
   Min,
@@ -14,6 +18,13 @@ export enum NodeEnv {
   Development = "development",
   Test = "test",
   Production = "production",
+}
+
+export enum MediasoupLogLevel {
+  Debug = "debug",
+  Warn = "warn",
+  Error = "error",
+  None = "none",
 }
 
 /**
@@ -106,6 +117,59 @@ export class EnvironmentVariables {
   })
   @IsBoolean()
   COOKIE_SECURE: boolean = false;
+
+  @IsIP()
+  MEDIASOUP_ANNOUNCED_IP: string = "127.0.0.1";
+
+  @IsIP()
+  MEDIASOUP_LISTEN_IP: string = "0.0.0.0";
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  MEDIASOUP_RTC_MIN_PORT: number = 40000;
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  MEDIASOUP_RTC_MAX_PORT: number = 40100;
+
+  @Transform(({ obj }) => {
+    const raw: unknown = (obj as Record<string, unknown>)["MEDIASOUP_MAX_WORKERS"];
+    return raw === "" || raw === undefined ? undefined : Number(raw);
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  MEDIASOUP_MAX_WORKERS?: number;
+
+  @IsEnum(MediasoupLogLevel)
+  MEDIASOUP_LOG_LEVEL: MediasoupLogLevel = MediasoupLogLevel.Warn;
+
+  @Transform(({ obj }) => {
+    const raw: unknown = (obj as Record<string, unknown>)["INSTANCE_ID"];
+    return raw === "" || raw === undefined ? hostname() : raw;
+  })
+  @IsString()
+  @MinLength(1)
+  INSTANCE_ID: string = hostname();
+
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  VOICE_MAX_PARTICIPANTS: number = 20;
+
+  @IsInt()
+  @Min(1)
+  ROUTER_IDLE_TTL: number = 60;
+
+  @IsInt()
+  @Min(1)
+  VOICE_PRESENCE_TTL: number = 90;
+
+  @IsInt()
+  @Min(1)
+  VOICE_RECONNECT_GRACE: number = 20;
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvironmentVariables {
@@ -122,6 +186,12 @@ export function validateEnv(raw: Record<string, unknown>): EnvironmentVariables 
       .join("; ");
 
     throw new Error(`Invalid environment configuration — ${details}`);
+  }
+
+  if (parsed.MEDIASOUP_RTC_MIN_PORT > parsed.MEDIASOUP_RTC_MAX_PORT) {
+    throw new Error(
+      "Invalid environment configuration — MEDIASOUP_RTC_MIN_PORT must not exceed MEDIASOUP_RTC_MAX_PORT",
+    );
   }
 
   return parsed;

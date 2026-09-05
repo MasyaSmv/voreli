@@ -81,7 +81,6 @@ describe("server view query count", () => {
     const few = await queriesToRenderServer(2);
     const many = await queriesToRenderServer(20);
 
-
     // Ten times the channels must not mean ten times the queries. A little slack allows for
     // an extra query or two that does not scale with the list.
     expect(many).toBeLessThanOrEqual(few + 3);

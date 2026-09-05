@@ -48,7 +48,12 @@ describe("PrismaService outside a transaction", () => {
     await expect(
       harness.prisma.runInTransaction(async () => {
         await harness.prisma.db.user.create({
-          data: { id, username: `rolled-${id.slice(0, 8)}`, displayName: "Rolled", passwordHash: "x" },
+          data: {
+            id,
+            username: `rolled-${id.slice(0, 8)}`,
+            displayName: "Rolled",
+            passwordHash: "x",
+          },
         });
 
         throw new Error("boom");

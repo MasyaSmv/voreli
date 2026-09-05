@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { RedisClientType } from "redis";
 
