@@ -61,8 +61,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     private readonly transports: TransportFactory,
     config: ConfigService<EnvironmentVariables, true>,
   ) {
-    this.transportFailureGraceMs =
-      config.get("VOICE_RECONNECT_GRACE", { infer: true }) * 1_000;
+    this.transportFailureGraceMs = config.get("VOICE_RECONNECT_GRACE", { infer: true }) * 1_000;
   }
 
   register(sessionId: string, channelId: string, handle: VoiceRouterHandle): void {

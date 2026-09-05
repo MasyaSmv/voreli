@@ -50,7 +50,6 @@ export class ServerViewService {
     serverId: string,
     membership: ResolvedMembership,
   ): Promise<ServerView> {
-
     const server = await this.prisma.db.server.findUnique({
       where: { id: serverId },
       include: {

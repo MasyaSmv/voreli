@@ -3,7 +3,11 @@ import type { User } from "@prisma/client";
 import type { AuthenticatedResponse } from "@voreli/shared";
 
 import { AccessTokenService } from "./access-token.service.js";
-import { type IssuedRefreshToken, RefreshTokenService, type SessionOrigin } from "./refresh-token.service.js";
+import {
+  type IssuedRefreshToken,
+  RefreshTokenService,
+  type SessionOrigin,
+} from "./refresh-token.service.js";
 import { UserPresenter } from "./user-presenter.js";
 
 export interface IssuedSession {

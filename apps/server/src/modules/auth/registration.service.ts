@@ -2,10 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { User } from "@prisma/client";
 
 import { ID_GENERATOR, type IdGenerator } from "../../common/services/id-generator.js";
-import {
-  PASSWORD_HASHER,
-  type PasswordHasher,
-} from "../../common/services/password-hasher.js";
+import { PASSWORD_HASHER, type PasswordHasher } from "../../common/services/password-hasher.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import { UsernameTakenError } from "./errors/auth-errors.js";
 import { InviteRedemptionService } from "./invite-redemption.service.js";

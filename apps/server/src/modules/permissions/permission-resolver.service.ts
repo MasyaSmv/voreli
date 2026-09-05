@@ -81,10 +81,7 @@ export class DatabasePermissionResolver implements PermissionResolverContract {
     };
   }
 
-  async forChannel(
-    userId: string,
-    channelId: string,
-  ): Promise<ResolvedChannelMembership | null> {
+  async forChannel(userId: string, channelId: string): Promise<ResolvedChannelMembership | null> {
     const channel = await this.prisma.db.channel.findUnique({
       where: { id: channelId },
       select: { id: true, serverId: true },

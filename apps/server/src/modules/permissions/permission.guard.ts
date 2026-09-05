@@ -3,10 +3,7 @@ import { Reflector } from "@nestjs/core";
 import { hasPermission, Permission } from "@voreli/shared";
 
 import type { AuthenticatedRequest } from "../auth/access-token.guard.js";
-import {
-  MissingPermissionError,
-  ResourceNotVisibleError,
-} from "./errors/permission-errors.js";
+import { MissingPermissionError, ResourceNotVisibleError } from "./errors/permission-errors.js";
 import {
   PERMISSION_RESOLVER,
   type PermissionResolverContract,
