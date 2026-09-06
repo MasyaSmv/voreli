@@ -33,8 +33,7 @@ import {
   AuthenticatedGateway,
   type AuthenticatedSocket,
 } from "../realtime/authenticated.gateway.js";
-import { SocketIdentityService } from "../realtime/socket-identity.service.js";
-import { SocketSessionRegistry } from "../realtime/socket-session.registry.js";
+import { SocketAuthenticationService } from "../realtime/socket-authentication.service.js";
 import { VoiceBroadcaster } from "./voice-broadcaster.js";
 import { VoiceRoomService } from "./voice-room.service.js";
 import { VoiceSignalingService } from "./voice-signaling.service.js";
@@ -50,8 +49,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   private readonly server!: Namespace;
 
   constructor(
-    identities: SocketIdentityService,
-    sessions: SocketSessionRegistry,
+    authentication: SocketAuthenticationService,
     @Inject(DOMAIN_EVENT_BUS) events: DomainEventBus,
     @Inject(VOICE_STATE_REPOSITORY) private readonly state: VoiceStateRepository,
     private readonly rooms: VoiceRoomService,
@@ -59,7 +57,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     private readonly broadcaster: VoiceBroadcaster,
     private readonly membership: VoiceSocketMembershipService,
   ) {
-    super(identities, sessions, events);
+    super(authentication, events);
   }
 
   override afterInit(server: Namespace): void {
