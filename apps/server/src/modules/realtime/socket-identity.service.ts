@@ -50,4 +50,13 @@ export class SocketIdentityService {
       return null;
     }
   }
+
+  async isActive(identity: SocketIdentity): Promise<boolean> {
+    const session = await this.prisma.db.refreshSession.findUnique({
+      where: { id: identity.sessionId },
+      select: { userId: true, revokedAt: true },
+    });
+
+    return session?.userId === identity.user.id && session.revokedAt === null;
+  }
 }

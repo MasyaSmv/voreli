@@ -35,8 +35,7 @@ import {
   AuthenticatedGateway,
   type AuthenticatedSocket,
 } from "../realtime/authenticated.gateway.js";
-import { SocketIdentityService } from "../realtime/socket-identity.service.js";
-import { SocketSessionRegistry } from "../realtime/socket-session.registry.js";
+import { SocketAuthenticationService } from "../realtime/socket-authentication.service.js";
 import { ChatBroadcaster, channelRoomOf as roomOf } from "./chat-broadcaster.js";
 import { ChatRoomAccessService } from "./chat-room-access.service.js";
 import { MessagePresenter } from "./message-presenter.js";
@@ -50,8 +49,7 @@ export class ChatGateway extends AuthenticatedGateway {
   private readonly server!: Namespace;
 
   constructor(
-    identities: SocketIdentityService,
-    sessions: SocketSessionRegistry,
+    authentication: SocketAuthenticationService,
     @Inject(DOMAIN_EVENT_BUS) events: DomainEventBus,
     @Inject(PERMISSION_RESOLVER) private readonly permissions: PermissionResolverContract,
     private readonly messages: MessageService,
@@ -60,7 +58,7 @@ export class ChatGateway extends AuthenticatedGateway {
     private readonly roomAccess: ChatRoomAccessService,
     private readonly broadcaster: ChatBroadcaster,
   ) {
-    super(identities, sessions, events);
+    super(authentication, events);
   }
 
   override afterInit(server: Namespace): void {

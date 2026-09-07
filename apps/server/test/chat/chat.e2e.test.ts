@@ -267,6 +267,28 @@ describe("realtime chat", () => {
     await expect(disconnect).resolves.toBe("io server disconnect");
   });
 
+  it("lazily discovers a revoked session when its pub/sub event was lost", async () => {
+    const user = await createMember();
+    const token = await login(user);
+    const claims = await harness.app.get(AccessTokenService).verify(token);
+    const socket = connect(token);
+    await connected(socket);
+
+    await harness.prisma.db.refreshSession.update({
+      where: { id: claims.sid },
+      data: { revokedAt: new Date() },
+    });
+
+    const beforeInterval = await socket.emitWithAck(ClientEvent.Subscribe, { channelId });
+    expect(beforeInterval.ok).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const disconnect = disconnected(socket);
+    socket.emit(ClientEvent.Subscribe, { channelId });
+
+    await expect(disconnect).resolves.toBe("io server disconnect");
+  });
+
   it("disconnects only the socket of the individually revoked session", async () => {
     const user = await createMember();
     const keeperToken = await login(user);
