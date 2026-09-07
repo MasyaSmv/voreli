@@ -9,17 +9,18 @@ import { fetchMyServers, fetchServer, fetchUnread } from "../../entities/server/
 import { ChannelSidebar } from "../../widgets/channel-sidebar/ChannelSidebar";
 import { ChatPanel } from "../../widgets/chat/ChatPanel";
 import { ServerRail } from "../../widgets/server-rail/ServerRail";
+import { ServerHome } from "../../widgets/server-home/ServerHome";
 import { VoicePanel } from "../../widgets/voice-panel/VoicePanel";
 
 /** The desktop workspace composes navigation and the active real-time surface. */
 export function WorkspacePage() {
   const { t } = useTranslation();
   const logOut = useSession((state) => state.logOut);
-  const [pickedServerId, setPickedServerId] = useState<string | null>(null);
+  const [pickedServerId, setPickedServerId] = useState<string | null | undefined>(undefined);
   const [pickedChannelId, setPickedChannelId] = useState<string | null>(null);
 
   const servers = useQuery({ queryKey: ["servers"], queryFn: fetchMyServers });
-  const serverId = pickedServerId ?? servers.data?.[0]?.id ?? null;
+  const serverId = pickedServerId === undefined ? (servers.data?.[0]?.id ?? null) : pickedServerId;
 
   const server = useQuery({
     queryKey: ["server", serverId],
@@ -44,13 +45,26 @@ export function WorkspacePage() {
       <ServerRail
         servers={servers.data ?? []}
         activeServerId={serverId}
+        onHome={() => {
+          setPickedServerId(null);
+          setPickedChannelId(null);
+        }}
         onSelect={(selectedServerId) => {
           setPickedServerId(selectedServerId);
           setPickedChannelId(null);
         }}
       />
 
-      {server.data ? (
+      {servers.isPending ? <WorkspaceLoading /> : null}
+
+      {serverId === null && !servers.isPending ? (
+        <ServerHome
+          servers={servers.data ?? []}
+          onSelect={(selectedServerId) => setPickedServerId(selectedServerId)}
+        />
+      ) : null}
+
+      {serverId !== null && server.data ? (
         <ChannelSidebar
           server={server.data}
           unread={unread.data?.channels ?? []}
@@ -68,7 +82,7 @@ export function WorkspacePage() {
               .then(() => logOut())
           }
         />
-      ) : (
+      ) : serverId !== null ? (
         <nav className="flex w-[17rem] shrink-0 flex-col border-r border-line bg-panel px-5 py-5 text-sm text-muted">
           <div className="h-6 w-32 animate-pulse rounded-lg bg-panel-hover" />
           <div className="mt-8 space-y-3">
@@ -83,15 +97,30 @@ export function WorkspacePage() {
             )}
           </div>
         </nav>
-      )}
+      ) : null}
 
-      <main className="flex min-w-0 flex-1 flex-col bg-canvas">
-        {activeChannel?.type === "VOICE" ? (
-          <VoicePanel channel={activeChannel} />
-        ) : (
-          <ChatPanel channel={activeChannel} />
-        )}
-      </main>
+      {serverId !== null ? (
+        <main className="flex min-w-0 flex-1 flex-col bg-canvas">
+          {activeChannel?.type === "VOICE" ? (
+            <VoicePanel channel={activeChannel} />
+          ) : (
+            <ChatPanel channel={activeChannel} />
+          )}
+        </main>
+      ) : null}
     </div>
+  );
+}
+
+function WorkspaceLoading() {
+  const { t } = useTranslation();
+
+  return (
+    <main
+      className="flex min-w-0 flex-1 items-center justify-center bg-canvas"
+      aria-label={t("workspace.loading")}
+    >
+      <div className="h-10 w-48 animate-pulse rounded-xl bg-panel-hover" />
+    </main>
   );
 }

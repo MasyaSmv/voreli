@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 
 import { useSession } from "../../entities/session/session.store";
 import { useVoice } from "../../entities/voice/voice.store";
-import { Avatar } from "../../shared/ui/Avatar";
 import { Icon } from "../../shared/ui/Icon";
+import { ServerHeader } from "./ServerHeader";
+import { UserDock } from "./UserDock";
 
 interface ChannelSidebarProps {
   readonly server: ServerView;
@@ -30,15 +31,7 @@ export function ChannelSidebar({
 
   return (
     <aside className="flex w-[17rem] shrink-0 flex-col border-r border-line bg-panel">
-      <header className="flex min-h-16 items-center justify-between border-b border-line px-4">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-bold text-ink">{server.name}</h2>
-          <p className="mt-0.5 text-[11px] text-faint">
-            {t("workspace.channelCount", { count: server.channels.length })}
-          </p>
-        </div>
-        <Icon name="chevron-down" className="h-4 w-4 text-faint" />
-      </header>
+      <ServerHeader server={server} onChannelCreated={onSelect} />
 
       <nav
         className="min-h-0 flex-1 overflow-y-auto px-2 py-4"
@@ -74,32 +67,7 @@ export function ChannelSidebar({
         )}
       </nav>
 
-      <footer className="flex min-h-[4.5rem] items-center gap-3 border-t border-line bg-rail/45 px-3">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="relative">
-            <Avatar
-              name={currentUser?.displayName ?? "Voreli"}
-              url={currentUser?.avatarUrl ?? null}
-            />
-            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-[3px] border-panel bg-voice" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-ink">
-              {currentUser?.displayName}
-            </span>
-            <span className="block truncate text-[11px] text-faint">@{currentUser?.username}</span>
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onLogout}
-          aria-label={t("workspace.logout")}
-          title={t("workspace.logout")}
-          className="grid h-9 w-9 place-items-center rounded-xl text-faint transition hover:bg-panel-hover hover:text-danger"
-        >
-          <Icon name="log-out" className="h-4 w-4" />
-        </button>
-      </footer>
+      <UserDock onLogout={onLogout} />
     </aside>
   );
 }

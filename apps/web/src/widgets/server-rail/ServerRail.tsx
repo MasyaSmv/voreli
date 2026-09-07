@@ -2,15 +2,15 @@ import type { ServerSummary } from "@voreli/shared";
 import { useTranslation } from "react-i18next";
 
 import { BrandMark } from "../../shared/ui/BrandMark";
-import { LanguageSwitcher } from "../../shared/ui/LanguageSwitcher";
 
 interface ServerRailProps {
   readonly servers: readonly ServerSummary[];
   readonly activeServerId: string | null;
+  readonly onHome: () => void;
   readonly onSelect: (serverId: string) => void;
 }
 
-export function ServerRail({ servers, activeServerId, onSelect }: ServerRailProps) {
+export function ServerRail({ servers, activeServerId, onHome, onSelect }: ServerRailProps) {
   const { t } = useTranslation();
 
   return (
@@ -18,9 +18,18 @@ export function ServerRail({ servers, activeServerId, onSelect }: ServerRailProp
       className="flex w-[4.5rem] shrink-0 flex-col items-center border-r border-line bg-rail py-3"
       aria-label={t("workspace.servers")}
     >
-      <div className="mb-3 scale-90">
-        <BrandMark compact />
-      </div>
+      <button
+        type="button"
+        onClick={onHome}
+        aria-label={t("workspace.home")}
+        title={t("workspace.home")}
+        aria-current={activeServerId === null ? "page" : undefined}
+        className="mb-3 grid h-12 w-12 place-items-center rounded-2xl transition hover:bg-panel-hover"
+      >
+        <span className="scale-90">
+          <BrandMark compact />
+        </span>
+      </button>
       <div className="mb-3 h-px w-8 bg-line" />
 
       <nav className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1">
@@ -58,7 +67,6 @@ export function ServerRail({ servers, activeServerId, onSelect }: ServerRailProp
         })}
       </nav>
 
-      <LanguageSwitcher compact />
       <span
         className="mt-3 h-2 w-2 rounded-full bg-voice shadow-[0_0_12px_rgba(90,215,177,.65)]"
         title={t("workspace.statusOnline")}

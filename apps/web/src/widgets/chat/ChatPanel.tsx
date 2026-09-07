@@ -1,8 +1,14 @@
 import type { ChannelView, MessageView } from "@voreli/shared";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useChannelChat } from "../../features/send-message/useChannelChat";
+import {
+  formatMessageDay,
+  formatMessageTime,
+  formatMessageTimestamp,
+  sameLocalDay,
+} from "../../shared/lib/message-date";
 import { Avatar } from "../../shared/ui/Avatar";
 import { Icon } from "../../shared/ui/Icon";
 
@@ -66,8 +72,14 @@ export function ChatPanel({ channel }: ChatPanelProps) {
           <EmptyChannel channelName={channel.name} />
         ) : (
           <ol className="px-5 py-5">
-            {messages.map((message) => (
-              <MessageRow key={message.id} message={message} locale={i18n.resolvedLanguage} />
+            {messages.map((message, index) => (
+              <Fragment key={message.id}>
+                {index === 0 ||
+                !sameLocalDay(messages[index - 1]?.createdAt ?? "", message.createdAt) ? (
+                  <MessageDay value={message.createdAt} locale={i18n.resolvedLanguage} />
+                ) : null}
+                <MessageRow message={message} locale={i18n.resolvedLanguage} />
+              </Fragment>
             ))}
           </ol>
         )}
@@ -140,14 +152,38 @@ function MessageRow({
           <span className="truncate text-sm font-semibold text-ink">
             {message.author.displayName}
           </span>
-          <time className="shrink-0 text-[10px] text-faint" dateTime={message.createdAt}>
-            {formatTime(message.createdAt, locale)}
+          <time
+            className="shrink-0 text-[10px] text-faint"
+            dateTime={message.createdAt}
+            title={formatMessageTimestamp(message.createdAt, locale)}
+          >
+            {formatMessageTime(message.createdAt, locale)}
           </time>
         </div>
         <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-ink-soft">
           {message.text}
         </p>
       </div>
+    </li>
+  );
+}
+
+function MessageDay({
+  value,
+  locale,
+}: {
+  readonly value: string;
+  readonly locale: string | undefined;
+}) {
+  return (
+    <li className="relative my-4 flex items-center justify-center" role="separator">
+      <span className="absolute inset-x-0 h-px bg-line" />
+      <time
+        dateTime={value.slice(0, 10)}
+        className="relative rounded-full border border-line bg-canvas px-3 py-1 text-[10px] font-semibold text-muted"
+      >
+        {formatMessageDay(value, locale)}
+      </time>
     </li>
   );
 }
@@ -205,11 +241,4 @@ function MessageSkeleton() {
       ))}
     </div>
   );
-}
-
-function formatTime(value: string, locale: string | undefined): string {
-  return new Date(value).toLocaleTimeString(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

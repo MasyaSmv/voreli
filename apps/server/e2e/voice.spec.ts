@@ -158,6 +158,49 @@ test("session survives reload and an expired cookie returns to login", async ({ 
   }
 });
 
+test("workspace home, channel creation, settings and message dates are interactive", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    locale: "ru-RU",
+    extraHTTPHeaders: { "X-Forwarded-For": clientAddresses.alice },
+  });
+  const page = await context.newPage();
+  const channelName = `заметки-${suffix}`;
+
+  try {
+    await login(page, aliceUsername);
+
+    await page.getByRole("button", { name: "Главная Voreli" }).click();
+    await expect(page.getByRole("heading", { name: "Ваши пространства" })).toBeVisible();
+    await page.getByRole("button", { name: "Voice e2e Открыть сервер" }).click();
+
+    await page.getByRole("button", { name: "Меню сервера Voice e2e" }).click();
+    await page.getByRole("button", { name: "Создать канал" }).click();
+    await page.getByLabel("Название").fill(channelName);
+    const [created] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/servers/${serverId}/channels`) &&
+          response.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Создать", exact: true }).click(),
+    ]);
+    expect(created.status(), await created.text()).toBe(201);
+    await expect(page.getByRole("heading", { name: channelName })).toBeVisible();
+
+    await page.getByLabel(`Сообщение в канале ${channelName}`).fill("Сообщение с датой");
+    await page.getByRole("button", { name: "Отправить сообщение" }).click();
+    await expect(page.getByRole("separator")).toBeVisible();
+
+    await page.getByRole("button", { name: "Открыть профиль и настройки" }).click();
+    await page.getByRole("button", { name: "English" }).click();
+    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  } finally {
+    await closeContext(context);
+  }
+});
+
 test("chat and voice work while three clients receive every remote track through the SFU", async ({
   browser,
 }) => {
