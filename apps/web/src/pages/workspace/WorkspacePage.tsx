@@ -1,22 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ChannelView } from "@voreli/shared";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useSession } from "../../entities/session/session.store";
 import { voiceSession } from "../../features/voice-join/voice-session";
 import { fetchMyServers, fetchServer, fetchUnread } from "../../entities/server/server.api";
 import { ChannelSidebar } from "../../widgets/channel-sidebar/ChannelSidebar";
 import { ChatPanel } from "../../widgets/chat/ChatPanel";
+import { ServerRail } from "../../widgets/server-rail/ServerRail";
 import { VoicePanel } from "../../widgets/voice-panel/VoicePanel";
 
-/** The main screen: servers on the left, channels next to them, the conversation filling the rest. */
+/** The desktop workspace composes navigation and the active real-time surface. */
 export function WorkspacePage() {
-  const user = useSession((state) => state.user);
+  const { t } = useTranslation();
   const logOut = useSession((state) => state.logOut);
-
-  // Selection is stored only once the user makes one; until then the first entry is used.
-  // Derived rather than written into state from an effect, which would render twice and
-  // briefly show a state that never really existed.
   const [pickedServerId, setPickedServerId] = useState<string | null>(null);
   const [pickedChannelId, setPickedChannelId] = useState<string | null>(null);
 
@@ -33,36 +31,24 @@ export function WorkspacePage() {
     queryKey: ["unread", serverId],
     queryFn: () => fetchUnread(serverId as string),
     enabled: serverId !== null,
-    // Counts change from other people's messages, so they are polled rather than derived.
     refetchInterval: 15_000,
   });
 
   const channelId =
     pickedChannelId ?? server.data?.channels.find((channel) => channel.type === "TEXT")?.id ?? null;
-
   const activeChannel: ChannelView | null =
     server.data?.channels.find((channel) => channel.id === channelId) ?? null;
 
   return (
-    <div className="flex h-dvh bg-neutral-950 text-white">
-      <aside className="flex w-16 shrink-0 flex-col items-center gap-2 border-r border-white/10 py-4">
-        {(servers.data ?? []).map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            title={entry.name}
-            onClick={() => {
-              setPickedServerId(entry.id);
-              setPickedChannelId(null);
-            }}
-            className={`grid h-10 w-10 place-items-center rounded-xl text-sm font-semibold ${
-              entry.id === serverId ? "bg-white/90 text-neutral-950" : "bg-white/10 text-white/70"
-            }`}
-          >
-            {entry.name.slice(0, 2).toUpperCase()}
-          </button>
-        ))}
-      </aside>
+    <div className="flex h-dvh min-w-[48rem] bg-canvas text-ink">
+      <ServerRail
+        servers={servers.data ?? []}
+        activeServerId={serverId}
+        onSelect={(selectedServerId) => {
+          setPickedServerId(selectedServerId);
+          setPickedChannelId(null);
+        }}
+      />
 
       {server.data ? (
         <ChannelSidebar
@@ -75,38 +61,37 @@ export function WorkspacePage() {
               void voiceSession.join(channel.id).catch(() => undefined);
             }
           }}
+          onLogout={() =>
+            void voiceSession
+              .leave()
+              .catch(() => undefined)
+              .then(() => logOut())
+          }
         />
       ) : (
-        <nav className="w-60 shrink-0 border-r border-white/10 px-4 py-4 text-sm text-white/40">
-          {servers.isPending
-            ? "Загружаем…"
-            : "Пока нет ни одного сервера. Попросите приглашение или создайте свой."}
+        <nav className="flex w-[17rem] shrink-0 flex-col border-r border-line bg-panel px-5 py-5 text-sm text-muted">
+          <div className="h-6 w-32 animate-pulse rounded-lg bg-panel-hover" />
+          <div className="mt-8 space-y-3">
+            {servers.isPending ? (
+              <>
+                <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
+                <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
+                <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
+              </>
+            ) : (
+              <p className="leading-6">{t("workspace.noServers")}</p>
+            )}
+          </div>
         </nav>
       )}
 
-      <main className="flex flex-1 flex-col">
+      <main className="flex min-w-0 flex-1 flex-col bg-canvas">
         {activeChannel?.type === "VOICE" ? (
           <VoicePanel channel={activeChannel} />
         ) : (
           <ChatPanel channel={activeChannel} />
         )}
       </main>
-
-      <footer className="absolute bottom-3 left-3 flex items-center gap-2 text-xs text-white/40">
-        <span>{user?.displayName}</span>
-        <button
-          type="button"
-          onClick={() =>
-            void voiceSession
-              .leave()
-              .catch(() => undefined)
-              .then(() => logOut())
-          }
-          className="underline-offset-4 hover:underline"
-        >
-          выйти
-        </button>
-      </footer>
     </div>
   );
 }

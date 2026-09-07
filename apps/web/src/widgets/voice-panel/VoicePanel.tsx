@@ -1,118 +1,134 @@
 import type { ChannelView } from "@voreli/shared";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 
 import { useSession } from "../../entities/session/session.store";
-import { useVoice } from "../../entities/voice/voice.store";
+import { useVoice, type VoiceConnectionState } from "../../entities/voice/voice.store";
 import { voiceSession } from "../../features/voice-join/voice-session";
+import { Icon } from "../../shared/ui/Icon";
+import { VoiceRoom } from "./VoiceRoom";
 
 export function VoicePanel({ channel }: { readonly channel: ChannelView }) {
-  const currentUserId = useSession((state) => state.user?.id);
+  const { t } = useTranslation();
+  const currentUser = useSession((state) => state.user);
   const voice = useVoice();
-  const own = voice.participants.find((participant) => participant.userId === currentUserId);
+  const own = voice.participants.find((participant) => participant.userId === currentUser?.id);
   const activeHere = voice.channelId === channel.id;
+  const connection = activeHere ? voice.connection : "idle";
 
   return (
-    <section className="flex flex-1 flex-col">
-      <header className="border-b border-white/10 px-6 py-3">
-        <h2 className="text-sm font-medium text-white">Голосовой: {channel.name}</h2>
-        <p className="mt-0.5 text-xs text-white/40">
-          {connectionLabel(activeHere ? voice.connection : "idle")}
-        </p>
+    <section
+      className="flex min-h-0 flex-1 flex-col"
+      aria-label={t("voice.channelLabel", { channel: channel.name })}
+    >
+      <header className="flex min-h-16 items-center justify-between border-b border-line bg-canvas/80 px-6 backdrop-blur">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-voice/10 text-voice">
+            <Icon name="radio" className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-bold text-ink">{channel.name}</h1>
+            <p className="text-xs text-faint">{t("voice.channelType")}</p>
+          </div>
+        </div>
+        <ConnectionStatus connection={connection} t={t} />
       </header>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6">
-        {!activeHere ? (
-          <button
-            type="button"
-            onClick={() => void voiceSession.join(channel.id).catch(() => undefined)}
-            className="rounded-lg bg-emerald-500 px-5 py-2 text-sm font-medium text-neutral-950"
-          >
-            Подключиться
-          </button>
-        ) : (
-          <>
-            <ul className="w-full max-w-sm space-y-2">
-              {voice.participants.map((participant) => (
-                <li
-                  key={participant.userId}
-                  className={`rounded-lg border px-3 py-2 text-sm ${
-                    voice.speakingUserIds.has(participant.userId)
-                      ? "border-emerald-400 bg-emerald-400/10"
-                      : "border-white/10 bg-white/5"
-                  }`}
-                >
-                  {participant.userId === currentUserId
-                    ? "Вы"
-                    : `Участник ${participant.userId.slice(0, 6)}`}
-                  {participant.selfMuted ? " · микрофон выключен" : ""}
-                  {participant.selfDeafened ? " · звук выключен" : ""}
-                </li>
-              ))}
-            </ul>
+      {!activeHere ? (
+        <JoinView channelName={channel.name} channelId={channel.id} />
+      ) : (
+        <VoiceRoom
+          participants={voice.participants}
+          speakingUserIds={voice.speakingUserIds}
+          currentUserId={currentUser?.id}
+          currentUserName={currentUser?.displayName}
+          own={own}
+        />
+      )}
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={!own}
-                onClick={() =>
-                  void voiceSession.setSelfMuted(!(own?.selfMuted ?? false)).catch(() => undefined)
-                }
-                className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"
-              >
-                {own?.selfMuted ? "Включить микрофон" : "Выключить микрофон"}
-              </button>
-              <button
-                type="button"
-                disabled={!own}
-                onClick={() =>
-                  void voiceSession
-                    .setSelfDeafened(!(own?.selfDeafened ?? false))
-                    .catch(() => undefined)
-                }
-                className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"
-              >
-                {own?.selfDeafened ? "Включить звук" : "Выключить звук"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void voiceSession.leave().catch(() => undefined)}
-                className="rounded-lg bg-red-500/80 px-4 py-2 text-sm"
-              >
-                Выйти
-              </button>
-              <button
-                type="button"
-                disabled={!own || own.selfMuted}
-                onClick={() => void voiceSession.startEcho().catch(() => undefined)}
-                className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"
-              >
-                Проверить эхо
-              </button>
-            </div>
-          </>
-        )}
-
-        {voice.error === null ? null : (
-          <div className="flex flex-col items-center gap-2">
-            <p className="text-sm text-red-300">{voice.error}</p>
-            {activeHere ? (
-              <button
-                type="button"
-                onClick={() => void voiceSession.resumeAudio().catch(() => undefined)}
-                className="rounded-lg bg-white/10 px-4 py-2 text-sm"
-              >
-                Разрешить воспроизведение
-              </button>
-            ) : null}
-          </div>
-        )}
-      </div>
+      {voice.error === null ? null : (
+        <div className="mx-auto mb-4 flex w-[calc(100%-2rem)] max-w-xl items-center justify-between gap-3 rounded-xl border border-danger/20 bg-danger/8 px-4 py-3">
+          <p role="alert" className="text-sm text-danger-soft">
+            {voice.error}
+          </p>
+          {activeHere ? (
+            <button
+              type="button"
+              onClick={() => void voiceSession.resumeAudio().catch(() => undefined)}
+              className="shrink-0 rounded-lg bg-panel-raised px-3 py-2 text-xs font-semibold text-ink transition hover:bg-panel-hover"
+            >
+              {t("voice.allowAudio")}
+            </button>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }
 
-function connectionLabel(connection: "idle" | "joining" | "connected" | "reconnecting") {
-  if (connection === "joining") return "Подключаемся…";
-  if (connection === "connected") return "Голос подключён";
-  if (connection === "reconnecting") return "Восстанавливаем соединение…";
-  return "Не подключено";
+function JoinView({
+  channelName,
+  channelId,
+}: {
+  readonly channelName: string;
+  readonly channelId: string;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center overflow-hidden p-8">
+      <div className="relative w-full max-w-md rounded-[2rem] border border-line bg-panel/75 px-8 py-10 text-center shadow-[0_28px_80px_rgba(0,0,0,.3)] backdrop-blur">
+        <div className="absolute inset-x-16 -top-16 -z-10 h-40 rounded-full bg-voice/10 blur-3xl" />
+        <span className="mx-auto grid h-16 w-16 place-items-center rounded-[1.4rem] bg-voice/10 text-voice ring-1 ring-inset ring-voice/15">
+          <Icon name="headphones" className="h-7 w-7" />
+        </span>
+        <p className="mt-6 text-[11px] font-bold uppercase tracking-[0.16em] text-voice">
+          {t("voice.channelType")}
+        </p>
+        <h2 className="mt-2 text-2xl font-bold tracking-[-0.035em] text-ink">{channelName}</h2>
+        <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-muted">
+          {t("voice.joinDescription")}
+        </p>
+        <button
+          type="button"
+          onClick={() => void voiceSession.join(channelId).catch(() => undefined)}
+          className="mt-7 inline-flex min-h-11 items-center gap-2 rounded-xl bg-voice px-5 text-sm font-bold text-voice-ink shadow-voice transition hover:-translate-y-0.5 hover:bg-voice-hover"
+        >
+          <Icon name="radio" className="h-4 w-4" />
+          {t("voice.join")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConnectionStatus({
+  connection,
+  t,
+}: {
+  readonly connection: VoiceConnectionState;
+  readonly t: TFunction;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted" role="status">
+      <span
+        className={
+          "h-2 w-2 rounded-full " +
+          (connection === "connected"
+            ? "bg-voice"
+            : connection === "idle"
+              ? "bg-faint"
+              : "animate-pulse bg-warning")
+        }
+      />
+      {connectionLabel(connection, t)}
+    </div>
+  );
+}
+
+function connectionLabel(connection: VoiceConnectionState, t: TFunction): string {
+  if (connection === "joining") return t("voice.joining");
+  if (connection === "connected") return t("voice.connected");
+  if (connection === "reconnecting") return t("voice.reconnecting");
+  return t("voice.disconnected");
 }

@@ -15,9 +15,11 @@ const clientAddresses = {
   alice: `2001:db8::${suffix.slice(0, 4)}:1`,
   bob: `2001:db8::${suffix.slice(0, 4)}:2`,
   charlie: `2001:db8::${suffix.slice(0, 4)}:3`,
+  invalidLogin: `2001:db8::${suffix.slice(0, 4)}:4`,
 };
 const userIds: string[] = [];
 let serverId: string;
+const textChannelName = "general";
 
 test.beforeAll(async () => {
   const passwordHash = await argon2.hash(password);
@@ -49,7 +51,10 @@ test.beforeAll(async () => {
         },
       },
       channels: {
-        create: { id: randomUUID(), name: "Голосовой", type: "VOICE" },
+        create: [
+          { id: randomUUID(), name: textChannelName, type: "TEXT", position: 0 },
+          { id: randomUUID(), name: "Голосовой", type: "VOICE", position: 1 },
+        ],
       },
     },
   });
@@ -91,7 +96,39 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("echo works and three clients receive every remote track through the SFU", async ({
+test("login exposes its pending and error states", async ({ browser }) => {
+  const context = await browser.newContext({
+    locale: "ru-RU",
+    reducedMotion: "reduce",
+    extraHTTPHeaders: { "X-Forwarded-For": clientAddresses.invalidLogin },
+  });
+  const page = await context.newPage();
+
+  try {
+    await page.route("**/auth/login", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await route.continue();
+    });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Войдите в Voreli" })).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "Русский" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "English" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Имя пользователя")).toBeFocused();
+    await page.getByLabel("Имя пользователя").fill(aliceUsername);
+    await page.getByLabel("Пароль").fill("incorrect password");
+    await page.getByRole("button", { name: "Войти" }).click();
+
+    await expect(page.getByRole("button", { name: "Подождите…" })).toBeDisabled();
+    await expect(page.getByRole("alert")).toHaveText("Неверное имя или пароль");
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test("chat and voice work while three clients receive every remote track through the SFU", async ({
   browser,
 }) => {
   test.setTimeout(90_000);
@@ -104,6 +141,13 @@ test("echo works and three clients receive every remote track through the SFU", 
 
   try {
     await login(alice, aliceUsername);
+    const message = `Browser smoke ${suffix}`;
+    await alice
+      .getByRole("textbox", { name: `Сообщение в канале ${textChannelName}` })
+      .fill(message);
+    await alice.getByRole("button", { name: "Отправить сообщение" }).click();
+    await expect(alice.getByText(message)).toBeVisible();
+
     await alice.getByRole("button", { name: /Голосовой/ }).click();
     await expect(alice.getByText("Голос подключён")).toBeVisible();
 
@@ -168,6 +212,7 @@ async function login(page: Page, username: string): Promise<void> {
 async function voiceContext(browser: Browser, clientAddress: string): Promise<BrowserContext> {
   const context = await browser.newContext({
     permissions: ["microphone"],
+    locale: "ru-RU",
     extraHTTPHeaders: { "X-Forwarded-For": clientAddress },
   });
   await context.addInitScript(() => {

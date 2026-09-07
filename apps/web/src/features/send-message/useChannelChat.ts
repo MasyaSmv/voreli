@@ -9,6 +9,7 @@ import {
 } from "@voreli/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { fetchHistory } from "../../entities/message/message.api";
 import { chatSocket } from "../../shared/api/socket";
@@ -50,6 +51,7 @@ function toAck(value: unknown): Ack {
  * sends events for rooms a socket has joined, so switching channels leaves the old room.
  */
 export function useChannelChat(channelId: string | null): ChannelChat {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<readonly MessageView[]>([]);
   const [typingUntil, setTypingUntil] = useState<ReadonlyMap<string, TypingEvent>>(new Map());
@@ -80,7 +82,7 @@ export function useChannelChat(channelId: string | null): ChannelChat {
         }
       } catch {
         if (!cancelled) {
-          setError("Не удалось загрузить историю канала");
+          setError(t("chat.errors.history"));
         }
       } finally {
         if (!cancelled) {
@@ -138,7 +140,7 @@ export function useChannelChat(channelId: string | null): ChannelChat {
 
       setMessages([]);
       setTypingUntil(new Map());
-      setError("Доступ к каналу отозван");
+      setError(t("chat.errors.accessRevoked"));
       void queryClient.invalidateQueries({ queryKey: ["server"] });
       void queryClient.invalidateQueries({ queryKey: ["unread"] });
     };
@@ -158,7 +160,7 @@ export function useChannelChat(channelId: string | null): ChannelChat {
       socket.off(ServerEvent.ChannelAccessRevoked, onAccessRevoked);
       void socket.emitWithAck(ClientEvent.Unsubscribe, { channelId });
     };
-  }, [channelId, queryClient]);
+  }, [channelId, queryClient, t]);
 
   // The indicator has to go out on its own: the server sends "started", never "stopped".
   useEffect(() => {
@@ -196,12 +198,12 @@ export function useChannelChat(channelId: string | null): ChannelChat {
       if (!ack.ok) {
         setError(
           ack.errorCode === "MISSING_PERMISSION"
-            ? "В этом канале вам нельзя писать"
-            : (ack.message ?? "Сообщение не отправлено"),
+            ? t("chat.errors.cannotWrite")
+            : t("chat.errors.notSent"),
         );
       }
     },
-    [channelId],
+    [channelId, t],
   );
 
   const notifyTyping = useCallback((): void => {

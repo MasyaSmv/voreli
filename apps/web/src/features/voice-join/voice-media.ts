@@ -5,6 +5,7 @@ import {
 } from "@voreli/shared";
 import type { types } from "mediasoup-client";
 
+import { i18n } from "../../shared/i18n/i18n";
 import type { OwnUserId } from "./voice-identity";
 import { VoicePlayback } from "./voice-playback";
 import { VoiceRequestError } from "./voice-request-error";
@@ -104,7 +105,7 @@ export class VoiceMedia {
 
   /** Loops the local microphone back through the SFU — the round trip that proves it works. */
   async startEcho(): Promise<void> {
-    if (!this.producer) throw new Error("Микрофон ещё не готов");
+    if (!this.producer) throw new Error(i18n.t("voice.errors.microphoneNotReady"));
     await this.consume(this.producer.id);
   }
 
@@ -151,8 +152,8 @@ export class VoiceMedia {
 
   private async produce(stream: MediaStream): Promise<MediaStreamTrack | undefined> {
     const track = stream.getAudioTracks()[0];
-    if (!track) throw new Error("Микрофон не вернул аудиодорожку");
-    if (!this.transports) throw new Error("Транспорты не созданы");
+    if (!track) throw new Error(i18n.t("voice.errors.missingAudioTrack"));
+    if (!this.transports) throw new Error(i18n.t("voice.errors.transportsNotReady"));
     try {
       this.producer = await this.transports.send.produce({
         track,

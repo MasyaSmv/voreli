@@ -32,7 +32,13 @@ const server: ServerView = {
 describe("ChannelSidebar", () => {
   it("groups channels by category and puts the rest under a fallback heading", () => {
     render(
-      <ChannelSidebar server={server} unread={[]} activeChannelId={null} onSelect={() => {}} />,
+      <ChannelSidebar
+        server={server}
+        unread={[]}
+        activeChannelId={null}
+        onSelect={() => {}}
+        onLogout={() => {}}
+      />,
     );
 
     expect(screen.getByText("Общее")).toBeInTheDocument();
@@ -51,6 +57,7 @@ describe("ChannelSidebar", () => {
         ]}
         activeChannelId="ch1"
         onSelect={() => {}}
+        onLogout={() => {}}
       />,
     );
 
@@ -68,6 +75,7 @@ describe("ChannelSidebar", () => {
         unread={[]}
         activeChannelId={null}
         onSelect={(channel) => selected.push(channel)}
+        onLogout={() => {}}
       />,
     );
 
@@ -84,7 +92,13 @@ describe("ChannelSidebar", () => {
     };
 
     render(
-      <ChannelSidebar server={empty} unread={[]} activeChannelId={null} onSelect={() => {}} />,
+      <ChannelSidebar
+        server={empty}
+        unread={[]}
+        activeChannelId={null}
+        onSelect={() => {}}
+        onLogout={() => {}}
+      />,
     );
 
     // The server never sends invisible channels, so an empty category must not hint at them.
