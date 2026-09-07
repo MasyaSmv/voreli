@@ -128,6 +128,36 @@ test("login exposes its pending and error states", async ({ browser }) => {
   }
 });
 
+test("session survives reload and an expired cookie returns to login", async ({ browser }) => {
+  const context = await browser.newContext({
+    locale: "ru-RU",
+    extraHTTPHeaders: { "X-Forwarded-For": clientAddresses.alice },
+  });
+  const page = await context.newPage();
+  let refreshRequests = 0;
+
+  try {
+    await page.route("**/auth/refresh", async (route) => {
+      refreshRequests += 1;
+      await route.continue();
+    });
+    await login(page, aliceUsername);
+    refreshRequests = 0;
+
+    await page.reload();
+
+    await expect(page.getByRole("heading", { name: "Voice e2e" })).toBeVisible();
+    expect(refreshRequests).toBe(1);
+
+    await context.clearCookies();
+    await page.reload();
+
+    await expect(page.getByRole("heading", { name: "Войдите в Voreli" })).toBeVisible();
+  } finally {
+    await closeContext(context);
+  }
+});
+
 test("chat and voice work while three clients receive every remote track through the SFU", async ({
   browser,
 }) => {
