@@ -6,6 +6,11 @@ export interface DomainEventMap {
   readonly "channel.overrides.changed": { readonly channelId: string };
   readonly "member.removed": { readonly serverId: string; readonly userId: string };
   readonly "member.joined": { readonly serverId: string; readonly userId: string };
+  readonly "relationship.changed": {
+    readonly userId: string;
+    readonly targetUserId: string;
+  };
+  readonly "contact.policy.changed": { readonly userId: string };
 }
 
 export type DomainEventName = keyof DomainEventMap;

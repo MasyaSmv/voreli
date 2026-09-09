@@ -21,3 +21,8 @@ export class EditMessageDto {
   @Length(1, MESSAGE_MAX_LENGTH)
   text!: string;
 }
+
+export class MarkDirectReadDto {
+  @IsString()
+  messageId!: string;
+}

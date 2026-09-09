@@ -15,6 +15,8 @@ const EVENT_NAMES: readonly DomainEventName[] = [
   "channel.overrides.changed",
   "member.removed",
   "member.joined",
+  "relationship.changed",
+  "contact.policy.changed",
 ];
 
 const CHANNEL_PREFIX = "voreli:domain-events:";
@@ -55,6 +57,16 @@ function parsePayload<Name extends DomainEventName>(
     return nonEmptyString(record["serverId"]) && nonEmptyString(record["userId"])
       ? (record as unknown as DomainEventMap[Name])
       : null;
+  }
+
+  if (name === "relationship.changed") {
+    return nonEmptyString(record["userId"]) && nonEmptyString(record["targetUserId"])
+      ? (record as unknown as DomainEventMap[Name])
+      : null;
+  }
+
+  if (name === "contact.policy.changed") {
+    return nonEmptyString(record["userId"]) ? (record as unknown as DomainEventMap[Name]) : null;
   }
 
   return nonEmptyString(record["channelId"]) ? (record as unknown as DomainEventMap[Name]) : null;

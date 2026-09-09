@@ -12,14 +12,14 @@ datasource db {
 }
 
 model User {
-  id           String    @id
-  username     String    @unique
+  id           String   @id
+  username     String   @unique
   displayName  String
   passwordHash String
-  email        String?   @unique
+  email        String?  @unique
   avatarUrl    String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   sessions     RefreshSession[]
   memberships  Member[]
@@ -27,7 +27,121 @@ model User {
   messages     Message[]
   invites      Invite[]
 
+  contactSettings      UserContactSettings?
+  requestedFriendships FriendRequest[]          @relation("FriendRequestRequester")
+  friendRequestsAsLow  FriendRequest[]          @relation("FriendRequestLowUser")
+  friendRequestsAsHigh FriendRequest[]          @relation("FriendRequestHighUser")
+  friendshipsAsLow     Friendship[]             @relation("FriendshipLowUser")
+  friendshipsAsHigh    Friendship[]             @relation("FriendshipHighUser")
+  blocksCreated        UserBlock[]              @relation("Blocker")
+  blocksReceived       UserBlock[]              @relation("Blocked")
+  conversationsAsLow   DirectConversation[]     @relation("DirectConversationLowUser")
+  conversationsAsHigh  DirectConversation[]     @relation("DirectConversationHighUser")
+  directReads          DirectConversationRead[]
+
   @@map("users")
+}
+
+enum ContactAudience {
+  EVERYONE
+  FRIENDS
+  NOBODY
+}
+
+model UserContactSettings {
+  userId                String          @id
+  directMessageAudience ContactAudience @default(EVERYONE)
+  directCallAudience    ContactAudience @default(EVERYONE)
+  friendRequestAudience ContactAudience @default(EVERYONE)
+  updatedAt             DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_contact_settings")
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+model FriendRequest {
+  id          String              @id
+  userLowId   String
+  userHighId  String
+  requesterId String
+  status      FriendRequestStatus
+  createdAt   DateTime            @default(now())
+  resolvedAt  DateTime?
+
+  userLow   User @relation("FriendRequestLowUser", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHigh  User @relation("FriendRequestHighUser", fields: [userHighId], references: [id], onDelete: Cascade)
+  requester User @relation("FriendRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+
+  @@index([userLowId, status])
+  @@index([userHighId, status])
+  @@map("friend_requests")
+}
+
+model Friendship {
+  id         String   @id
+  userLowId  String
+  userHighId String
+  createdAt  DateTime @default(now())
+
+  userLow  User @relation("FriendshipLowUser", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHigh User @relation("FriendshipHighUser", fields: [userHighId], references: [id], onDelete: Cascade)
+
+  @@unique([userLowId, userHighId])
+  @@index([userHighId])
+  @@map("friendships")
+}
+
+model UserBlock {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("user_blocks")
+}
+
+model DirectConversation {
+  id         String   @id
+  userLowId  String
+  userHighId String
+  createdAt  DateTime @default(now())
+
+  userLow  User                     @relation("DirectConversationLowUser", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHigh User                     @relation("DirectConversationHighUser", fields: [userHighId], references: [id], onDelete: Cascade)
+  messages Message[]
+  reads    DirectConversationRead[]
+
+  @@unique([userLowId, userHighId])
+  @@index([userHighId])
+  @@map("direct_conversations")
+}
+
+model DirectConversationRead {
+  conversationId    String
+  userId            String
+  lastReadMessageId String?
+  updatedAt         DateTime @updatedAt
+
+  conversation DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastRead     Message?           @relation("DirectConversationLastRead", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+
+  @@id([conversationId, userId])
+  @@index([userId, updatedAt])
+  @@index([lastReadMessageId])
+  @@map("direct_conversation_reads")
 }
 
 /// One long-lived login on one device. The token itself is never stored — only its
@@ -160,12 +274,12 @@ model Channel {
 /// Third step of permission resolution: a per-channel patch on top of the roles a member
 /// already has. Exactly one of roleId / memberId is set.
 model ChannelOverride {
-  id        String @id
+  id        String  @id
   channelId String
   roleId    String?
   memberId  String?
-  allow     BigInt @default(0)
-  deny      BigInt @default(0)
+  allow     BigInt  @default(0)
+  deny      BigInt  @default(0)
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   role    Role?   @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -182,23 +296,29 @@ model ChannelOverride {
 /// or the history in it. `contentSchema` says how to read those bytes. Everything needed to
 /// paginate, thread and count unread lives in separate columns and stays readable.
 model Message {
-  id            String    @id
-  channelId     String
-  authorId      String
-  content       Bytes
-  contentSchema String    @default("text/v1")
-  replyToId     String?
-  createdAt     DateTime  @default(now())
-  editedAt      DateTime?
-  deletedAt     DateTime?
+  id                   String    @id
+  channelId            String?
+  directConversationId String?
+  authorId             String
+  content              Bytes
+  contentSchema        String    @default("text/v1")
+  replyToId            String?
+  clientNonce          String?
+  createdAt            DateTime  @default(now())
+  editedAt             DateTime?
+  deletedAt            DateTime?
 
-  channel Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  author  User      @relation(fields: [authorId], references: [id])
-  replyTo Message?  @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies Message[] @relation("MessageReply")
+  channel            Channel?                 @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  directConversation DirectConversation?      @relation(fields: [directConversationId], references: [id], onDelete: Cascade)
+  author             User                     @relation(fields: [authorId], references: [id])
+  replyTo            Message?                 @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies            Message[]                @relation("MessageReply")
+  directReadMarks    DirectConversationRead[] @relation("DirectConversationLastRead")
 
+  @@unique([directConversationId, authorId, clientNonce])
   // Cursor pagination of channel history walks this index backwards. Never OFFSET.
   @@index([channelId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([directConversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([authorId])
   @@map("messages")
 }

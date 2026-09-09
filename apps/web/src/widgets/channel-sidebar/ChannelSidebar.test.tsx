@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ChannelView, ServerView } from "@voreli/shared";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ContactAudience, type ChannelView, type ServerView } from "@voreli/shared";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { useSession } from "../../entities/session/session.store";
@@ -135,14 +136,22 @@ describe("ChannelSidebar", () => {
   });
 
   it("opens profile and language settings from the user dock", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    queryClient.setQueryData(["contact-settings"], {
+      directMessageAudience: ContactAudience.Everyone,
+      directCallAudience: ContactAudience.Everyone,
+      friendRequestAudience: ContactAudience.Everyone,
+    });
     render(
-      <ChannelSidebar
-        server={server}
-        unread={[]}
-        activeChannelId={null}
-        onSelect={() => {}}
-        onLogout={() => {}}
-      />,
+      <QueryClientProvider client={queryClient}>
+        <ChannelSidebar
+          server={server}
+          unread={[]}
+          activeChannelId={null}
+          onSelect={() => {}}
+          onLogout={() => {}}
+        />
+      </QueryClientProvider>,
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Открыть профиль и настройки" }));

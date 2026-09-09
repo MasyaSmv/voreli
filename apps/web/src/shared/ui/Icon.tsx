@@ -6,6 +6,7 @@ export type IconName =
   | "headphones"
   | "home"
   | "log-out"
+  | "message"
   | "mic"
   | "mic-off"
   | "phone-off"
@@ -68,6 +69,13 @@ function pathFor(name: IconName) {
         <>
           <path d="M10 17l5-5-5-5M15 12H3" />
           <path d="M14 3h4a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-4" />
+        </>
+      );
+    case "message":
+      return (
+        <>
+          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
+          <path d="M8 9h8M8 13h5" />
         </>
       );
     case "mic":

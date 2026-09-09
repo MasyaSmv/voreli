@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { User } from "@prisma/client";
 
+import { normalizeUsername } from "../../common/identity/username.js";
 import { PASSWORD_HASHER, type PasswordHasher } from "../../common/services/password-hasher.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import { InvalidCredentialsError } from "./errors/auth-errors.js";
@@ -16,7 +17,7 @@ export class LoginService {
 
   async authenticate(username: string, password: string): Promise<User> {
     const user = await this.prisma.db.user.findUnique({
-      where: { username: username.toLowerCase() },
+      where: { username: normalizeUsername(username) },
     });
 
     if (!user) {

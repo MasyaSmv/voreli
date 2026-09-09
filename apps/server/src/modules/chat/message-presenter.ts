@@ -16,6 +16,7 @@ export class MessagePresenter {
     return {
       id: message.id,
       channelId: message.channelId,
+      directConversationId: message.directConversationId,
       author: {
         id: message.author.id,
         username: message.author.username,

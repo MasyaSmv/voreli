@@ -1,10 +1,19 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { type MessageDeletedEvent, type MessageView, ServerEvent } from "@voreli/shared";
+import {
+  type DirectMessageDeletedEvent,
+  type MessageDeletedEvent,
+  type MessageView,
+  ServerEvent,
+} from "@voreli/shared";
 import type { Namespace } from "socket.io";
 
 /** Socket.IO room holding everyone currently looking at a channel. */
 export function channelRoomOf(channelId: string): string {
   return `channel:${channelId}`;
+}
+
+export function directRoomOf(conversationId: string): string {
+  return `dm:${conversationId}`;
 }
 
 /**
@@ -29,31 +38,47 @@ export class ChatBroadcaster {
   }
 
   messageCreated(message: MessageView): void {
-    this.emit(message.channelId, ServerEvent.MessageNew, message);
+    if (message.channelId !== null) {
+      this.emit(channelRoomOf(message.channelId), ServerEvent.MessageNew, message);
+    } else if (message.directConversationId !== null) {
+      this.emit(directRoomOf(message.directConversationId), ServerEvent.DirectMessageNew, message);
+    }
   }
 
   messageUpdated(message: MessageView): void {
-    this.emit(message.channelId, ServerEvent.MessageUpdated, message);
+    if (message.channelId !== null) {
+      this.emit(channelRoomOf(message.channelId), ServerEvent.MessageUpdated, message);
+    } else if (message.directConversationId !== null) {
+      this.emit(
+        directRoomOf(message.directConversationId),
+        ServerEvent.DirectMessageUpdated,
+        message,
+      );
+    }
   }
 
   messageDeleted(event: MessageDeletedEvent): void {
-    this.emit(event.channelId, ServerEvent.MessageDeleted, event);
+    this.emit(channelRoomOf(event.channelId), ServerEvent.MessageDeleted, event);
   }
 
-  private emit(channelId: string, event: string, payload: unknown): void {
+  directMessageDeleted(event: DirectMessageDeletedEvent): void {
+    this.emit(directRoomOf(event.conversationId), ServerEvent.DirectMessageDeleted, event);
+  }
+
+  private emit(room: string, event: string, payload: unknown): void {
     if (!this.server) {
       // Reachable only if a message is written before the gateway starts — in practice a
       // misconfigured module. Silence here would look like a delivery bug forever.
       this.logger.error({
         message: "Chat broadcast dropped: no namespace attached",
         event,
-        channelId,
+        room,
         operation: "broadcastChatEvent",
       });
 
       return;
     }
 
-    this.server.to(channelRoomOf(channelId)).emit(event, payload);
+    this.server.to(room).emit(event, payload);
   }
 }

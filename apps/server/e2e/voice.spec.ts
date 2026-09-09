@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
-import { DEFAULT_EVERYONE_PERMISSIONS } from "@voreli/shared";
+import { ContactAudience, DEFAULT_EVERYONE_PERMISSIONS } from "@voreli/shared";
 import argon2 from "argon2";
 
 const prisma = new PrismaClient();
@@ -92,6 +92,9 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await prisma.server.delete({ where: { id: serverId } });
+  await prisma.directConversation.deleteMany({
+    where: { OR: [{ userLowId: { in: userIds } }, { userHighId: { in: userIds } }] },
+  });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   await prisma.$disconnect();
 });
@@ -187,7 +190,7 @@ test("workspace home, channel creation, settings and message dates are interacti
       page.getByRole("button", { name: "Создать", exact: true }).click(),
     ]);
     expect(created.status(), await created.text()).toBe(201);
-    await expect(page.getByRole("heading", { name: channelName })).toBeVisible();
+    await expect(page.getByRole("heading", { name: channelName, exact: true })).toBeVisible();
 
     await page.getByLabel(`Сообщение в канале ${channelName}`).fill("Сообщение с датой");
     await page.getByRole("button", { name: "Отправить сообщение" }).click();
@@ -198,6 +201,105 @@ test("workspace home, channel creation, settings and message dates are interacti
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   } finally {
     await closeContext(context);
+  }
+});
+
+test("relationship flow keeps a revoked DM as read-only history", async ({ browser }) => {
+  const aliceContext = await browser.newContext({
+    locale: "ru-RU",
+    extraHTTPHeaders: { "X-Forwarded-For": clientAddresses.alice },
+  });
+  const bobContext = await browser.newContext({
+    locale: "ru-RU",
+    extraHTTPHeaders: { "X-Forwarded-For": clientAddresses.bob },
+  });
+  const alice = await aliceContext.newPage();
+  const bob = await bobContext.newPage();
+
+  try {
+    await login(alice, aliceUsername);
+    await alice.getByRole("button", { name: "Главная Voreli" }).click();
+    await alice.getByPlaceholder("@username").fill(`@${bobUsername}`);
+    const [lookupResponse] = await Promise.all([
+      alice.waitForResponse((response) => response.url().includes("/users/lookup?")),
+      alice.getByRole("button", { name: "Найти" }).click(),
+    ]);
+    expect(lookupResponse.status(), await lookupResponse.text()).toBe(200);
+    expect(await lookupResponse.json()).toMatchObject({ user: { username: bobUsername } });
+    await expect(alice.getByText(`@${bobUsername}`, { exact: true })).toBeVisible();
+    await alice.getByRole("button", { name: "Написать" }).click();
+    await alice.getByLabel("Сообщение для Bob").fill("Личное сообщение без дружбы");
+    await alice.getByRole("button", { name: "Отправить сообщение" }).click();
+    await expect(alice.getByText("Личное сообщение без дружбы", { exact: true })).toBeVisible();
+
+    await login(bob, bobUsername);
+    await bob.getByRole("button", { name: "Главная Voreli" }).click();
+    const aliceConversation = bob.getByRole("button", {
+      name: new RegExp(`Alice.*@${aliceUsername}`),
+    });
+    await expect(aliceConversation.getByText("1", { exact: true })).toBeVisible();
+    await aliceConversation.click();
+    await expect(bob.getByText("Личное сообщение без дружбы", { exact: true })).toBeVisible();
+
+    await bob.getByRole("button", { name: "Voice e2e", exact: true }).click();
+    await bob.getByRole("button", { name: "Открыть профиль и настройки" }).click();
+    const [closedMessages] = await Promise.all([
+      bob.waitForResponse(
+        (response) =>
+          response.url().endsWith("/users/me/contact-settings") &&
+          response.request().method() === "PATCH",
+      ),
+      bob.getByLabel("Сообщения").selectOption(ContactAudience.Nobody),
+    ]);
+    expect(await closedMessages.json()).toMatchObject({
+      directMessageAudience: ContactAudience.Nobody,
+      directCallAudience: ContactAudience.Everyone,
+    });
+
+    await expect(alice.getByRole("alert")).toHaveText("Адресат закрыл личные сообщения");
+    await expect(alice.getByText("Личное сообщение без дружбы", { exact: true })).toBeVisible();
+    await expect(alice.getByLabel("Сообщение для Bob")).toBeDisabled();
+
+    await alice.getByRole("button", { name: "В друзья" }).click();
+    await expect(alice.getByRole("heading", { name: "Исходящие заявки" })).toBeVisible();
+    await alice.getByRole("button", { name: "Отменить" }).click();
+    await expect(alice.getByRole("heading", { name: "Исходящие заявки" })).not.toBeVisible();
+
+    await alice.getByRole("button", { name: "Найти" }).click();
+    await alice.getByRole("button", { name: "В друзья" }).click();
+    await expect(alice.getByRole("heading", { name: "Исходящие заявки" })).toBeVisible();
+
+    await bob.getByRole("button", { name: "Закрыть", exact: true }).click();
+    await bob.getByRole("button", { name: "Главная Voreli" }).click();
+    await expect(bob.getByRole("heading", { name: "Входящие заявки" })).toBeVisible();
+    await bob.getByRole("button", { name: "Отклонить" }).click();
+    await expect(bob.getByRole("heading", { name: "Входящие заявки" })).not.toBeVisible();
+    await expect(alice.getByRole("heading", { name: "Исходящие заявки" })).not.toBeVisible();
+
+    await alice.getByRole("button", { name: "Найти" }).click();
+    await alice.getByRole("button", { name: "В друзья" }).click();
+    await expect(bob.getByRole("heading", { name: "Входящие заявки" })).toBeVisible();
+    await bob.getByRole("button", { name: "Принять" }).click();
+    await expect(alice.getByRole("button", { name: "Удалить из друзей" })).toBeVisible();
+
+    await bob.getByRole("button", { name: "Voice e2e", exact: true }).click();
+    await bob.getByRole("button", { name: "Открыть профиль и настройки" }).click();
+    await bob.getByLabel("Сообщения").selectOption(ContactAudience.Friends);
+    await bob.getByRole("button", { name: "Закрыть", exact: true }).click();
+
+    await alice.getByRole("button", { name: "Voice e2e", exact: true }).click();
+    await alice.getByRole("button", { name: "Главная Voreli" }).click();
+    await alice.getByRole("button", { name: new RegExp(`Bob.*@${bobUsername}`) }).click();
+    await expect(alice.getByText("Личное сообщение без дружбы", { exact: true })).toBeVisible();
+    await expect(alice.getByLabel("Сообщение для Bob")).toBeEnabled();
+
+    await alice.getByRole("button", { name: "Удалить из друзей" }).click();
+    await expect(alice.getByRole("alert")).toHaveText("Адресат закрыл личные сообщения");
+    await expect(alice.getByText("Личное сообщение без дружбы", { exact: true })).toBeVisible();
+    await expect(alice.getByLabel("Сообщение для Bob")).toBeDisabled();
+  } finally {
+    await closeContext(aliceContext);
+    await closeContext(bobContext);
   }
 });
 
