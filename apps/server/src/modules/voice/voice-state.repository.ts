@@ -9,6 +9,7 @@ export interface VoiceParticipantState {
   readonly selfMuted: boolean;
   readonly selfDeafened: boolean;
   readonly moderatorMuted: boolean;
+  readonly moderatorDeafened: boolean;
   readonly joinedAt: string;
   readonly disconnectedAt: string | null;
 }
@@ -57,12 +58,19 @@ export interface VoiceStateRepository {
   finishEviction(channelId: string, userId: string, generation: number): Promise<boolean>;
   leave(channelId: string, userId: string, sessionId: string, generation: number): Promise<boolean>;
   touch(userId: string): Promise<boolean>;
-  updateSelfState(
+  updateControlState(
     channelId: string,
     userId: string,
     sessionId: string,
-    selfMuted: boolean,
-    selfDeafened: boolean,
+    generation: number,
+    state: VoiceControlState,
   ): Promise<VoiceParticipantState | null>;
   removeRoomsOwnedBy(instanceId: string): Promise<number>;
+}
+
+export interface VoiceControlState {
+  readonly selfMuted: boolean;
+  readonly selfDeafened: boolean;
+  readonly moderatorMuted: boolean;
+  readonly moderatorDeafened: boolean;
 }

@@ -1,6 +1,8 @@
 import {
   type CallConnectionQuality,
   type SetVoiceSelfStatePayload,
+  type VoiceParticipantUpdatedEvent,
+  type SetVoiceModeratorStatePayload,
   VoiceClientEvent,
   type VoiceParticipantView,
 } from "@voreli/shared";
@@ -12,6 +14,8 @@ import { bindVoiceServerEvents } from "./voice-server-events";
 import { SocketVoiceSignaling } from "./voice-signaling";
 import { VoiceSpeakingMonitor } from "./voice-speaking-monitor";
 import { VoiceSessionState } from "./voice-state";
+import { VoiceInputDevice } from "../voice-devices/voice-input-device";
+import { VoiceDeviceController } from "../voice-devices/voice-device-controller";
 
 /**
  * The one object the UI talks to: every command a person can issue on a voice session.
@@ -23,13 +27,21 @@ import { VoiceSessionState } from "./voice-state";
 class VoiceSession {
   private readonly signaling = new SocketVoiceSignaling();
   private readonly state = new VoiceSessionState();
-  private readonly speaking = new VoiceSpeakingMonitor(this.state, sessionUserId);
   private readonly media = new VoiceMedia(this.signaling, this.state, sessionUserId);
+  private readonly input = new VoiceInputDevice();
+  private readonly speaking = new VoiceSpeakingMonitor(this.state, sessionUserId, this.media);
+  private readonly devices = new VoiceDeviceController(
+    this.input,
+    this.media,
+    this.speaking,
+    this.state,
+  );
   private readonly connection = new VoiceConnection(
     this.signaling,
     this.state,
     this.media,
     this.speaking,
+    this.devices,
   );
   private transition: Promise<void> = Promise.resolve();
 
@@ -50,19 +62,37 @@ class VoiceSession {
   }
 
   join(channelId: string): Promise<void> {
+    if (this.state.channelId === channelId && this.state.isConnected) return Promise.resolve();
     // The AudioContext and the microphone prompt both need the user gesture that is still on
     // the stack right now; asking for them after the first await would be too late.
     this.speaking.unlockAudio();
-    const microphone = navigator.mediaDevices.getUserMedia({ audio: true });
-    void microphone.catch((error: unknown) => this.state.failed(error));
+    const microphone = this.devices.capture();
+    void microphone.catch((error: unknown) => {
+      console.error("Failed to capture the voice microphone", { error });
+      this.state.failed(error);
+    });
     return this.run(() => this.connection.join(channelId, microphone));
   }
 
   joinMediaRoom(mediaRoomId: string, preparedMicrophone?: Promise<MediaStream>): Promise<void> {
+    if (this.state.channelId === mediaRoomId && this.state.isConnected) {
+      if (preparedMicrophone) {
+        void preparedMicrophone
+          .then((stream) => stream.getTracks().forEach((track) => track.stop()))
+          .catch((error: unknown) => {
+            console.error("Failed to dispose duplicate prepared microphone", { error });
+          });
+      }
+      return Promise.resolve();
+    }
     this.speaking.unlockAudio();
-    const microphone =
-      preparedMicrophone ?? navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    void microphone.catch((error: unknown) => this.state.failed(error));
+    const microphone = preparedMicrophone
+      ? preparedMicrophone.then((stream) => this.devices.adopt(stream))
+      : this.devices.capture();
+    void microphone.catch((error: unknown) => {
+      console.error("Failed to prepare the media-room microphone", { error });
+      this.state.failed(error);
+    });
     return this.run(() => this.connection.join(mediaRoomId, microphone, "media-room"));
   }
 
@@ -94,6 +124,16 @@ class VoiceSession {
     );
   }
 
+  setModeratorState(payload: SetVoiceModeratorStatePayload): Promise<void> {
+    return this.run(async () => {
+      const response = await this.signaling.request<VoiceParticipantUpdatedEvent>(
+        VoiceClientEvent.SetModeratorState,
+        payload,
+      );
+      this.state.upsertParticipant(response.participant);
+    });
+  }
+
   /** Autoplay blocks playback until a gesture; this is that gesture retrying it. */
   resumeAudio(): Promise<void> {
     this.speaking.unlockAudio();
@@ -106,6 +146,26 @@ class VoiceSession {
   startEcho(): Promise<void> {
     this.speaking.unlockAudio();
     return this.run(() => this.media.startEcho());
+  }
+
+  async previewMicrophone(): Promise<void> {
+    await this.devices.preview();
+  }
+
+  stopMicrophonePreview(): void {
+    this.devices.stopPreview();
+  }
+
+  async selectInputDevice(deviceId: string | null): Promise<void> {
+    await this.devices.selectInput(deviceId);
+  }
+
+  get outputSelectionSupported(): boolean {
+    return this.devices.outputSelectionSupported;
+  }
+
+  async selectOutputDevice(): Promise<void> {
+    await this.devices.selectOutput();
   }
 
   observeNetworkQuality(onQuality: (quality: CallConnectionQuality) => void): () => void {
@@ -121,9 +181,10 @@ class VoiceSession {
    */
   private async setSelfState(state: SetVoiceSelfStatePayload): Promise<void> {
     await this.signaling.request<null>(VoiceClientEvent.SetSelfState, state);
-    this.media.setMuted(state.selfMuted);
+    const own = this.self();
+    this.media.setMuted(state.selfMuted || (own?.moderatorMuted ?? false));
     if (state.selfMuted) this.speaking.muteLocal();
-    await this.media.setDeafened(state.selfDeafened);
+    await this.media.setDeafened(state.selfDeafened || (own?.moderatorDeafened ?? false));
   }
 
   private self(): VoiceParticipantView | undefined {
@@ -140,7 +201,9 @@ class VoiceSession {
 
   private serial(work: () => Promise<void>): Promise<void> {
     const next = this.transition.then(work, work);
-    this.transition = next.catch(() => undefined);
+    this.transition = next.catch((error: unknown) => {
+      console.error("Voice session transition failed", { error });
+    });
     return next;
   }
 }

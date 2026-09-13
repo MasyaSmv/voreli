@@ -3,6 +3,7 @@ import {
   type VoiceParticipantJoinedEvent,
   type VoiceParticipantLeftEvent,
   type VoiceParticipantUpdatedEvent,
+  type VoiceParticipantView,
   type VoiceProducerClosedEvent,
   type VoiceProducerEvent,
   VoiceServerEvent,
@@ -32,6 +33,7 @@ export interface VoiceMediaControl {
   consumeRemote(userId: string, producerId: string): Promise<void>;
   closeProducer(producerId: string): void;
   closeReceived(producerId: string): void;
+  setParticipantState(participant: VoiceParticipantView): Promise<void>;
 }
 
 /** The server's authoritative half of the speaking indicator. */
@@ -70,6 +72,10 @@ export function bindVoiceServerEvents(
 
   signaling.on<VoiceParticipantUpdatedEvent>(VoiceServerEvent.ParticipantUpdated, (event) => {
     state.upsertParticipant(event.participant);
+    void media.setParticipantState(event.participant).catch((error: unknown) => {
+      console.error("Failed to apply remote voice participant state", { error });
+      state.failed(error);
+    });
   });
 
   signaling.on<VoiceParticipantLeftEvent>(VoiceServerEvent.ParticipantLeft, (event) => {

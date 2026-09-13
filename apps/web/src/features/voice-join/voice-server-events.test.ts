@@ -50,6 +50,7 @@ class RecordingMedia implements VoiceMediaControl {
   readonly consumed: { userId: string; producerId: string }[] = [];
   readonly closedProducers: string[] = [];
   readonly closedReceived: string[] = [];
+  readonly participantStates: VoiceParticipantView[] = [];
 
   consumeRemote(userId: string, producerId: string): Promise<void> {
     this.consumed.push({ userId, producerId });
@@ -62,6 +63,11 @@ class RecordingMedia implements VoiceMediaControl {
 
   closeReceived(producerId: string): void {
     this.closedReceived.push(producerId);
+  }
+
+  setParticipantState(participant: VoiceParticipantView): Promise<void> {
+    this.participantStates.push(participant);
+    return Promise.resolve();
   }
 }
 
@@ -90,6 +96,8 @@ const bob: VoiceParticipantView = {
   userId: "user-bob",
   selfMuted: false,
   selfDeafened: false,
+  moderatorMuted: false,
+  moderatorDeafened: false,
   producers: [{ producerId: "producer-bob", kind: "audio" }],
 };
 

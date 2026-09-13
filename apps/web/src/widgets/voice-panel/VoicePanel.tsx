@@ -7,8 +7,15 @@ import { useVoice, type VoiceConnectionState } from "../../entities/voice/voice.
 import { voiceSession } from "../../features/voice-join/voice-session";
 import { Icon } from "../../shared/ui/Icon";
 import { VoiceRoom } from "./VoiceRoom";
+import { VoiceSettingsPopover } from "./VoiceSettingsPopover";
 
-export function VoicePanel({ channel }: { readonly channel: ChannelView }) {
+export function VoicePanel({
+  channel,
+  permissions = "0",
+}: {
+  readonly channel: ChannelView;
+  readonly permissions?: string;
+}) {
   const { t } = useTranslation();
   const currentUser = useSession((state) => state.user);
   const voice = useVoice();
@@ -43,6 +50,8 @@ export function VoicePanel({ channel }: { readonly channel: ChannelView }) {
           currentUserId={currentUser?.id}
           currentUserName={currentUser?.displayName}
           own={own}
+          channelId={channel.id}
+          permissions={permissions}
         />
       )}
 
@@ -97,6 +106,9 @@ function JoinView({
           <Icon name="radio" className="h-4 w-4" />
           {t("voice.join")}
         </button>
+        <div className="mt-3 flex justify-center">
+          <VoiceSettingsPopover placement="side" />
+        </div>
       </div>
     </div>
   );

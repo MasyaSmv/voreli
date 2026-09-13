@@ -22,7 +22,7 @@ export class MicrophoneMeter {
     context: AudioContext,
     track: MediaStreamTrack,
     isEnabled: () => boolean,
-    onChange: (speaking: boolean) => void,
+    onSample: (levelDb: number, speaking: boolean) => void,
   ): void {
     this.stop();
     const analyser = context.createAnalyser();
@@ -38,11 +38,9 @@ export class MicrophoneMeter {
       const rms = Math.sqrt(
         samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length,
       );
-      const speaking = this.detector.speaking;
+      const levelDb = 20 * Math.log10(Math.max(rms, 0.00001));
       const next = this.detector.sample(rms, isEnabled(), performance.now());
-      if (next !== speaking) {
-        onChange(next);
-      }
+      onSample(levelDb, next);
       this.frame = requestAnimationFrame(measure);
     };
 

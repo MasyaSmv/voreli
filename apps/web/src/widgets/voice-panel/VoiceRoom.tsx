@@ -1,4 +1,9 @@
-import type { VoiceParticipantView } from "@voreli/shared";
+import {
+  hasPermission,
+  parsePermissions,
+  Permission,
+  type VoiceParticipantView,
+} from "@voreli/shared";
 import { useTranslation } from "react-i18next";
 
 import { voiceSession } from "../../features/voice-join/voice-session";
@@ -11,6 +16,8 @@ interface VoiceRoomProps {
   readonly currentUserId: string | undefined;
   readonly currentUserName: string | undefined;
   readonly own: VoiceParticipantView | undefined;
+  readonly channelId: string;
+  readonly permissions: string;
 }
 
 export function VoiceRoom({
@@ -19,8 +26,13 @@ export function VoiceRoom({
   currentUserId,
   currentUserName,
   own,
+  channelId,
+  permissions,
 }: VoiceRoomProps) {
   const { t } = useTranslation();
+  const permissionMask = parsePermissions(permissions);
+  const canMute = hasPermission(permissionMask, Permission.MuteMembers);
+  const canDeafen = hasPermission(permissionMask, Permission.DeafenMembers);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -38,7 +50,11 @@ export function VoiceRoom({
             <button
               type="button"
               disabled={!own || own.selfMuted}
-              onClick={() => void voiceSession.startEcho().catch(() => undefined)}
+              onClick={() =>
+                void voiceSession.startEcho().catch((error: unknown) => {
+                  console.error("Failed to start the voice echo test", { error });
+                })
+              }
               className="rounded-lg border border-line px-3 py-2 text-xs font-semibold text-muted transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
             >
               {t("voice.echo")}
@@ -75,6 +91,54 @@ export function VoiceRoom({
                     {isCurrentUser ? t("common.you") : name}
                   </p>
                   <ParticipantState participant={participant} speaking={speaking} />
+                  {!isCurrentUser && (canMute || canDeafen) ? (
+                    <div className="mt-3 flex justify-center gap-2">
+                      {canMute ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void voiceSession
+                              .setModeratorState({
+                                channelId,
+                                userId: participant.userId,
+                                moderatorMuted: !participant.moderatorMuted,
+                                moderatorDeafened: participant.moderatorDeafened,
+                              })
+                              .catch((error: unknown) => {
+                                console.error("Failed to update moderator mute", { error });
+                              })
+                          }
+                          className="rounded-lg bg-panel-raised px-2.5 py-1.5 text-xs text-muted"
+                        >
+                          {participant.moderatorMuted
+                            ? t("voice.moderation.unmute")
+                            : t("voice.moderation.mute")}
+                        </button>
+                      ) : null}
+                      {canDeafen ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void voiceSession
+                              .setModeratorState({
+                                channelId,
+                                userId: participant.userId,
+                                moderatorMuted: participant.moderatorMuted,
+                                moderatorDeafened: !participant.moderatorDeafened,
+                              })
+                              .catch((error: unknown) => {
+                                console.error("Failed to update moderator deafen", { error });
+                              })
+                          }
+                          className="rounded-lg bg-panel-raised px-2.5 py-1.5 text-xs text-muted"
+                        >
+                          {participant.moderatorDeafened
+                            ? t("voice.moderation.undeafen")
+                            : t("voice.moderation.deafen")}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
@@ -95,13 +159,14 @@ function ParticipantState({
   readonly speaking: boolean;
 }) {
   const { t } = useTranslation();
-  const state = participant.selfDeafened
-    ? t("voice.soundOff")
-    : participant.selfMuted
-      ? t("voice.microphoneOff")
-      : speaking
-        ? t("voice.speaking")
-        : t("voice.listening");
+  const state =
+    participant.selfDeafened || participant.moderatorDeafened
+      ? t("voice.soundOff")
+      : participant.selfMuted || participant.moderatorMuted
+        ? t("voice.microphoneOff")
+        : speaking
+          ? t("voice.speaking")
+          : t("voice.listening");
 
   return <p className={"mt-1.5 text-xs " + (speaking ? "text-voice" : "text-faint")}>{state}</p>;
 }

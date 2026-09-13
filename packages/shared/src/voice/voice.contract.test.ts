@@ -15,4 +15,8 @@ describe("voice contract", () => {
       Object.keys(VoiceServerEvent).length,
     );
   });
+
+  it("exposes voice moderation as a client command", () => {
+    expect(VoiceClientEvent.SetModeratorState).toBe("voice:moderator-state");
+  });
 });

@@ -8,6 +8,7 @@ import { directCallSession } from "../../features/direct-call/direct-call-sessio
 import { voiceSession } from "../../features/voice-join/voice-session";
 import { Avatar } from "../../shared/ui/Avatar";
 import { Icon } from "../../shared/ui/Icon";
+import { VoiceSettingsPopover } from "../voice-panel/VoiceSettingsPopover";
 
 export function DirectCallOverlay() {
   const { t } = useTranslation();
@@ -133,6 +134,7 @@ export function DirectCallOverlay() {
                 primary
                 action={() => directCallSession.hangup()}
               />
+              <VoiceSettingsPopover />
             </>
           ) : null}
         </div>

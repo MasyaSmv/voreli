@@ -48,3 +48,39 @@ export class VoiceSessionEvictingError extends DomainError {
     super("Previous voice session is being closed; retry the join");
   }
 }
+
+export class VoiceModerationTargetNotPresentError extends DomainError {
+  static readonly CODE = "VOICE_MODERATION_TARGET_NOT_PRESENT";
+  readonly errorCode = VoiceModerationTargetNotPresentError.CODE;
+
+  constructor(readonly userId: string) {
+    super("Voice moderation target is not participating in this channel");
+  }
+}
+
+export class VoiceModerationPermissionError extends DomainError {
+  static readonly CODE = "VOICE_MODERATION_PERMISSION_FORBIDDEN";
+  readonly errorCode = VoiceModerationPermissionError.CODE;
+
+  constructor(readonly permission: "MuteMembers" | "DeafenMembers") {
+    super(`Voice moderation requires ${permission}`);
+  }
+}
+
+export class VoiceModerationSelfError extends DomainError {
+  static readonly CODE = "VOICE_MODERATION_SELF_FORBIDDEN";
+  readonly errorCode = VoiceModerationSelfError.CODE;
+
+  constructor() {
+    super("Use self controls instead of moderating yourself");
+  }
+}
+
+export class VoiceModerationHierarchyError extends DomainError {
+  static readonly CODE = "VOICE_MODERATION_HIERARCHY_FORBIDDEN";
+  readonly errorCode = VoiceModerationHierarchyError.CODE;
+
+  constructor() {
+    super("Voice moderation target is not below the actor in the role hierarchy");
+  }
+}

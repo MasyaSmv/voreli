@@ -2,6 +2,13 @@ import { MicrophoneMeter } from "./microphone-meter";
 import { RemoteSpeakingHold } from "./remote-speaking-hold";
 import type { OwnUserId } from "./voice-identity";
 import type { VoiceSessionState } from "./voice-state";
+import { useVoiceSettings } from "../../entities/voice-settings/voice-settings.store";
+import { VoiceInputGate } from "../voice-input/voice-input-gate";
+
+export interface LocalVoiceInputGate {
+  readonly microphoneServerPaused: boolean;
+  setInputGateOpen(open: boolean): void;
+}
 
 /**
  * Decides who the UI shows as speaking: the server's authoritative list of remote speakers,
@@ -17,11 +24,23 @@ export class VoiceSpeakingMonitor {
   private audioContext: AudioContext | undefined;
   private readonly meter = new MicrophoneMeter();
   private readonly remoteHold = new RemoteSpeakingHold();
+  private readonly inputGate = new VoiceInputGate();
 
   constructor(
     private readonly state: VoiceSessionState,
     private readonly ownUserId: OwnUserId,
-  ) {}
+    private readonly media: LocalVoiceInputGate,
+  ) {
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("blur", this.closeInputGate);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
+    useVoiceSettings.subscribe((settings, previous) => {
+      if (settings.inputMode !== previous.inputMode) {
+        this.media.setInputGateOpen(this.inputGate.modeChanged(settings.inputMode));
+      }
+    });
+  }
 
   unlockAudio(): void {
     this.audioContext ??= new window.AudioContext();
@@ -30,6 +49,16 @@ export class VoiceSpeakingMonitor {
 
   closeAudio(): void {
     this.stopMetering();
+    if (!this.audioContext) return;
+    void this.audioContext.close().catch((error: unknown) => {
+      console.error("Failed to close the microphone AudioContext", { error });
+      this.state.failed(error);
+    });
+    this.audioContext = undefined;
+  }
+
+  closeMicrophoneInput(): void {
+    this.stopMicrophoneMetering();
     if (!this.audioContext) return;
     void this.audioContext.close().catch((error: unknown) => this.state.failed(error));
     this.audioContext = undefined;
@@ -44,7 +73,19 @@ export class VoiceSpeakingMonitor {
 
   observeMicrophone(track: MediaStreamTrack, isEnabled: () => boolean): void {
     if (!this.audioContext) return;
-    this.meter.start(this.audioContext, track, isEnabled, (speaking) => {
+    this.meter.start(this.audioContext, track, isEnabled, (levelDb, speaking) => {
+      const settings = useVoiceSettings.getState();
+      settings.setMicrophoneLevel(levelDb);
+      if (settings.inputMode === "voice-activity") {
+        this.media.setInputGateOpen(
+          this.inputGate.sample(
+            levelDb,
+            settings.voiceActivityThresholdDb,
+            isEnabled(),
+            performance.now(),
+          ),
+        );
+      }
       this.localSpeaking = speaking;
       this.publish();
     });
@@ -54,16 +95,18 @@ export class VoiceSpeakingMonitor {
   muteLocal(): void {
     this.meter.reset();
     this.localSpeaking = false;
+    this.closeInputGate();
     this.publish();
   }
 
   stopMetering(): void {
-    this.meter.stop();
+    this.stopMicrophoneMetering();
     if (this.remoteExpiryTimer !== undefined) window.clearTimeout(this.remoteExpiryTimer);
     this.remoteExpiryTimer = undefined;
     this.remoteHold.clear();
     this.remoteUserIds = new Set();
     this.localSpeaking = false;
+    this.publish();
   }
 
   private scheduleRemoteExpiry(now: number): void {
@@ -95,4 +138,56 @@ export class VoiceSpeakingMonitor {
     }
     this.state.speaking(speaking);
   }
+
+  private stopMicrophoneMetering(): void {
+    this.meter.stop();
+    this.localSpeaking = false;
+    useVoiceSettings.getState().setMicrophoneLevel(-100);
+    this.closeInputGate();
+    this.publish();
+  }
+
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    const settings = useVoiceSettings.getState();
+    if (settings.inputMode !== "push-to-talk") return;
+    const handled = this.inputGate.keyDown(
+      event.code,
+      settings.pushToTalkCode,
+      event.repeat,
+      isEditable(event.target),
+      !this.media.microphoneServerPaused,
+    );
+    if (handled) {
+      event.preventDefault();
+      this.media.setInputGateOpen(true);
+    }
+  };
+
+  private readonly onKeyUp = (event: KeyboardEvent): void => {
+    const settings = useVoiceSettings.getState();
+    if (settings.inputMode !== "push-to-talk") return;
+    if (this.inputGate.keyUp(event.code, settings.pushToTalkCode)) {
+      event.preventDefault();
+      this.media.setInputGateOpen(false);
+    }
+  };
+
+  private readonly onVisibilityChange = (): void => {
+    if (document.visibilityState === "hidden") this.closeInputGate();
+  };
+
+  private readonly closeInputGate = (): void => {
+    this.inputGate.close();
+    this.media.setInputGateOpen(false);
+  };
+}
+
+function isEditable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
 }

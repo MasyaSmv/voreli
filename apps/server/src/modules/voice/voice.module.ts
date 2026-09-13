@@ -22,6 +22,8 @@ import { VoiceSocketMembershipService } from "./voice-socket-membership.service.
 import { VoiceTerminalCleanupService } from "./voice-terminal-cleanup.service.js";
 import { VOICE_STATE_REPOSITORY } from "./voice-state.repository.js";
 import { SpeakingService } from "./speaking.service.js";
+import { VoiceModerationPolicy } from "./voice-moderation.policy.js";
+import { VoiceParticipantControlService } from "./voice-participant-control.service.js";
 
 @Module({
   imports: [
@@ -47,6 +49,8 @@ import { SpeakingService } from "./speaking.service.js";
     VoiceSocketMembershipService,
     VoiceTerminalCleanupService,
     SpeakingService,
+    VoiceModerationPolicy,
+    VoiceParticipantControlService,
     RedisVoiceStateRepository,
     { provide: VOICE_STATE_REPOSITORY, useExisting: RedisVoiceStateRepository },
   ],
