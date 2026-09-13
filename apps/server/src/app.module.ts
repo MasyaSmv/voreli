@@ -13,6 +13,7 @@ import { RedisModule } from "./infra/redis/redis.module.js";
 import { MediaModule } from "./media/media.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { ChatModule } from "./modules/chat/chat.module.js";
+import { CallsModule } from "./modules/calls/calls.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { PermissionsModule } from "./modules/permissions/permissions.module.js";
 import { RealtimeModule } from "./modules/realtime/realtime.module.js";
@@ -42,6 +43,7 @@ import { VoiceModule } from "./modules/voice/voice.module.js";
     RelationshipsModule,
     ServersModule,
     ChatModule,
+    CallsModule,
     VoiceModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],

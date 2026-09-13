@@ -10,6 +10,7 @@ export type IconName =
   | "mic"
   | "mic-off"
   | "phone-off"
+  | "phone"
   | "plus"
   | "radio"
   | "send"
@@ -98,6 +99,10 @@ function pathFor(name: IconName) {
           <path d="m3 3 18 18" />
           <path d="M16.7 13.2c.8.3 1.6.8 2.3 1.3.7.5.9 1.5.4 2.2l-1 1.4c-.5.7-1.4 1-2.2.7A20 20 0 0 1 5.2 7.8c-.3-.8 0-1.7.7-2.2l1.4-1c.7-.5 1.7-.3 2.2.4.5.7 1 1.5 1.3 2.3" />
         </>
+      );
+    case "phone":
+      return (
+        <path d="M6.6 3.5 9 7.8 6.9 9.9a16 16 0 0 0 7.2 7.2l2.1-2.1 4.3 2.4-.8 3.1c-.2.8-.9 1.3-1.7 1.3A15.8 15.8 0 0 1 2.2 6c0-.8.5-1.5 1.3-1.7l3.1-.8Z" />
       );
     case "plus":
       return <path d="M12 5v14M5 12h14" />;

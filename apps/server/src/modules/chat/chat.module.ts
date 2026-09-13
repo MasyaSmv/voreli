@@ -37,5 +37,6 @@ import { UnreadService } from "./unread.service.js";
     MessagePresenter,
     UnreadService,
   ],
+  exports: [ChatBroadcaster, MessagePresenter],
 })
 export class ChatModule {}

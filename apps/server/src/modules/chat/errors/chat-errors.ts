@@ -32,6 +32,20 @@ export class NotMessageAuthorError extends DomainError implements HttpMappable {
   }
 }
 
+export class SystemMessageImmutableError extends DomainError implements HttpMappable {
+  static readonly CODE = "SYSTEM_MESSAGE_IMMUTABLE";
+  readonly errorCode = SystemMessageImmutableError.CODE;
+  readonly httpStatus = HttpStatus.CONFLICT;
+
+  constructor(readonly messageId: string) {
+    super("System messages cannot be edited or deleted");
+  }
+
+  override context(): Readonly<Record<string, unknown>> {
+    return { messageId: this.messageId };
+  }
+}
+
 export class ReplyTargetNotInChannelError extends DomainError implements HttpMappable {
   static readonly CODE = "REPLY_TARGET_NOT_IN_CHANNEL";
   readonly errorCode = ReplyTargetNotInChannelError.CODE;

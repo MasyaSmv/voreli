@@ -11,6 +11,15 @@ export interface DomainEventMap {
     readonly targetUserId: string;
   };
   readonly "contact.policy.changed": { readonly userId: string };
+  readonly "media.participant.left": { readonly mediaRoomId: string; readonly userId: string };
+  readonly "media.participant.reconnecting": {
+    readonly mediaRoomId: string;
+    readonly userId: string;
+    readonly reconnecting: boolean;
+  };
+  readonly "call.terminal": { readonly mediaRoomId: string };
+  readonly "call.reconcile": { readonly activeMediaRoomIds: readonly string[] };
+  readonly "media.call.empty": { readonly mediaRoomId: string };
 }
 
 export type DomainEventName = keyof DomainEventMap;

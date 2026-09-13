@@ -38,6 +38,9 @@ model User {
   conversationsAsLow   DirectConversation[]     @relation("DirectConversationLowUser")
   conversationsAsHigh  DirectConversation[]     @relation("DirectConversationHighUser")
   directReads          DirectConversationRead[]
+  callsStarted         DirectCall[]             @relation("DirectCallCaller")
+  callsReceived        DirectCall[]             @relation("DirectCallCallee")
+  callsEnded           DirectCall[]             @relation("DirectCallEndedBy")
 
   @@map("users")
 }
@@ -122,10 +125,49 @@ model DirectConversation {
   userHigh User                     @relation("DirectConversationHighUser", fields: [userHighId], references: [id], onDelete: Cascade)
   messages Message[]
   reads    DirectConversationRead[]
+  calls    DirectCall[]
 
   @@unique([userLowId, userHighId])
   @@index([userHighId])
   @@map("direct_conversations")
+}
+
+enum DirectCallStatus {
+  RINGING
+  ACTIVE
+  DECLINED
+  CANCELLED
+  MISSED
+  ENDED
+}
+
+model DirectCall {
+  id                String           @id
+  conversationId    String
+  callerId          String
+  calleeId          String
+  callerSessionId   String
+  clientNonce       String
+  status            DirectCallStatus
+  answeredSessionId String?
+  historyMessageId  String?          @unique
+  createdAt         DateTime         @default(now())
+  answeredAt        DateTime?
+  endedAt           DateTime?
+  endedById         String?
+
+  conversation   DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  caller         User               @relation("DirectCallCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  callee         User               @relation("DirectCallCallee", fields: [calleeId], references: [id], onDelete: Cascade)
+  endedBy        User?              @relation("DirectCallEndedBy", fields: [endedById], references: [id], onDelete: SetNull)
+  historyMessage Message?           @relation("DirectCallHistoryMessage", fields: [historyMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([callerSessionId, clientNonce])
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([calleeId, status, createdAt(sort: Desc)])
+  @@index([callerId, status, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("direct_calls")
 }
 
 model DirectConversationRead {
@@ -314,6 +356,7 @@ model Message {
   replyTo            Message?                 @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
   replies            Message[]                @relation("MessageReply")
   directReadMarks    DirectConversationRead[] @relation("DirectConversationLastRead")
+  callHistory        DirectCall?              @relation("DirectCallHistoryMessage")
 
   @@unique([directConversationId, authorId, clientNonce])
   // Cursor pagination of channel history walks this index backwards. Never OFFSET.

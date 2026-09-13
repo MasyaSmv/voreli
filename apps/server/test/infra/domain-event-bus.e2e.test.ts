@@ -54,6 +54,29 @@ describe("Redis domain event bus", () => {
     await expect(received).resolves.toEqual({ sessionId, userId });
   });
 
+  it("transports the media reconciliation result to call lifecycle subscribers", async () => {
+    const publisher = publisherApp.get<DomainEventBus>(DOMAIN_EVENT_BUS);
+    const subscriber = subscriberApp.get<DomainEventBus>(DOMAIN_EVENT_BUS);
+    const mediaRoomId = `direct-call:${createId()}`;
+
+    const received = new Promise<{ mediaRoomId: string }>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsubscribe();
+        reject(new Error("Timed out waiting for media.call.empty"));
+      }, 4000);
+      const unsubscribe = subscriber.subscribe("media.call.empty", (event) => {
+        if (event.mediaRoomId !== mediaRoomId) return;
+        clearTimeout(timer);
+        unsubscribe();
+        resolve(event);
+      });
+    });
+
+    await publisher.publish("media.call.empty", { mediaRoomId });
+
+    await expect(received).resolves.toEqual({ mediaRoomId });
+  });
+
   it("finishes a shared effect before publish returns, and runs it on the publisher only", async () => {
     const publisher = publisherApp.get<DomainEventBus>(DOMAIN_EVENT_BUS);
     const subscriber = subscriberApp.get<DomainEventBus>(DOMAIN_EVENT_BUS);

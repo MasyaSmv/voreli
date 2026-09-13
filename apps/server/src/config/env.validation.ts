@@ -176,6 +176,11 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   VOICE_RECONNECT_GRACE: number = 20;
+
+  @IsInt()
+  @Min(1_000)
+  @Max(60_000)
+  CALL_RECONCILE_INTERVAL_MS: number = 10_000;
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvironmentVariables {

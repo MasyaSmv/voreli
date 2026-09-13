@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ConversationChat } from "../../features/send-message/useRealtimeConversation";
@@ -15,6 +16,7 @@ interface ConversationSurfaceProps {
   readonly messageLabel: string;
   readonly placeholder: string;
   readonly chat: ConversationChat;
+  readonly headerActions?: ReactNode;
 }
 
 export function ConversationSurface(props: ConversationSurfaceProps) {
@@ -38,7 +40,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
 
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label={props.ariaLabel}>
-      <header className="flex min-h-16 items-center border-b border-line bg-canvas/80 px-6 backdrop-blur">
+      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-line bg-canvas/80 px-6 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-panel-raised text-accent-bright">
             <Icon name={props.icon} className="h-4 w-4" />
@@ -48,6 +50,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
             <p className="max-w-2xl truncate text-xs text-muted">{props.subtitle}</p>
           </div>
         </div>
+        {props.headerActions}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

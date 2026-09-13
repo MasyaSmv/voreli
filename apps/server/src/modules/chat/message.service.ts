@@ -11,6 +11,7 @@ import { NotATextChannelError, ReplyTargetNotInChannelError } from "./errors/cha
 import { ChatBroadcaster } from "./chat-broadcaster.js";
 import { MessagePresenter, type MessageWithAuthor } from "./message-presenter.js";
 import { MessageHistoryService } from "./message-history.service.js";
+import { SystemMessageImmutableError } from "./errors/chat-errors.js";
 
 export interface SendMessageInput {
   readonly channelId: string;
@@ -141,7 +142,10 @@ export class MessageService {
   }
 
   async edit(messageId: string, text: string): Promise<MessageWithAuthor> {
-    await this.history.byId(messageId);
+    const message = await this.history.byId(messageId);
+    if (message.contentSchema.startsWith("system/")) {
+      throw new SystemMessageImmutableError(messageId);
+    }
 
     const updated = await this.prisma.db.message.update({
       where: { id: messageId },
@@ -166,6 +170,9 @@ export class MessageService {
    */
   async remove(messageId: string): Promise<void> {
     const message = await this.history.byId(messageId);
+    if (message.contentSchema.startsWith("system/")) {
+      throw new SystemMessageImmutableError(messageId);
+    }
 
     await this.prisma.db.message.update({
       where: { id: messageId },

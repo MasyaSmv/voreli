@@ -7,6 +7,7 @@ import type { types } from "mediasoup-client";
 
 import { i18n } from "../../shared/i18n/i18n";
 import type { OwnUserId } from "./voice-identity";
+import { observeProducerQuality } from "./voice-network-quality";
 import { VoicePlayback } from "./voice-playback";
 import { VoiceRequestError } from "./voice-request-error";
 import type { VoiceSignaling } from "./voice-signaling";
@@ -17,7 +18,9 @@ import { createVoiceTransports, type VoiceTransports } from "./voice-transports"
 const MICROPHONE_CODEC_OPTIONS = {
   opusDtx: true,
   opusFec: true,
-  opusMaxAverageBitrate: 40_000,
+  opusMaxAverageBitrate: 24_000,
+  opusPtime: 20,
+  opusNack: true,
 } as const;
 
 /**
@@ -33,6 +36,7 @@ export class VoiceMedia {
   private transports: VoiceTransports | undefined;
   private producer: types.Producer | undefined;
   private deafened = false;
+  private networkQuality: "good" | "constrained" | "poor" | "unknown" = "unknown";
   private readonly playback = new VoicePlayback();
 
   constructor(
@@ -96,6 +100,9 @@ export class VoiceMedia {
       rtpParameters: response.rtpParameters,
     });
     await this.playback.add(producerId, consumer, this.deafened);
+    this.playback.setJitterBufferTarget(
+      this.networkQuality === "constrained" || this.networkQuality === "poor" ? 200 : null,
+    );
     // The server starts every consumer paused so the first packets cannot arrive before the
     // element that plays them exists.
     await this.signaling.request<null>(VoiceClientEvent.ResumeConsumer, {
@@ -130,6 +137,19 @@ export class VoiceMedia {
     else this.producer?.resume();
   }
 
+  observeQuality(
+    onQuality: (quality: "good" | "constrained" | "poor" | "unknown") => void,
+  ): () => void {
+    return this.producer ? observeProducerQuality(this.producer, onQuality) : () => undefined;
+  }
+
+  setJitterBufferTarget(quality: "good" | "constrained" | "poor" | "unknown"): void {
+    this.networkQuality = quality;
+    this.playback.setJitterBufferTarget(
+      quality === "constrained" || quality === "poor" ? 200 : null,
+    );
+  }
+
   closeProducer(producerId: string): void {
     if (this.producer?.id !== producerId) return;
     this.producer.close();
@@ -148,6 +168,7 @@ export class VoiceMedia {
     this.producer = undefined;
     this.transports = undefined;
     this.device = undefined;
+    this.networkQuality = "unknown";
   }
 
   private async produce(stream: MediaStream): Promise<MediaStreamTrack | undefined> {

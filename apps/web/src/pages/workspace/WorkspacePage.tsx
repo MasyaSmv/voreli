@@ -1,23 +1,31 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ChannelView } from "@voreli/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useSession } from "../../entities/session/session.store";
 import { voiceSession } from "../../features/voice-join/voice-session";
+import { directCallSession } from "../../features/direct-call/direct-call-session";
 import { fetchMyServers, fetchServer, fetchUnread } from "../../entities/server/server.api";
 import { ChannelSidebar } from "../../widgets/channel-sidebar/ChannelSidebar";
 import { ChatPanel } from "../../widgets/chat/ChatPanel";
 import { ServerRail } from "../../widgets/server-rail/ServerRail";
 import { ServerHome } from "../../widgets/server-home/ServerHome";
 import { VoicePanel } from "../../widgets/voice-panel/VoicePanel";
+import { DirectCallOverlay } from "../../widgets/direct-call/DirectCallOverlay";
 
 /** The desktop workspace composes navigation and the active real-time surface. */
 export function WorkspacePage() {
   const { t } = useTranslation();
   const logOut = useSession((state) => state.logOut);
+  const currentUser = useSession((state) => state.user);
   const [pickedServerId, setPickedServerId] = useState<string | null | undefined>(undefined);
   const [pickedChannelId, setPickedChannelId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentUser) directCallSession.connect();
+    return () => directCallSession.reset();
+  }, [currentUser]);
 
   const servers = useQuery({ queryKey: ["servers"], queryFn: fetchMyServers });
   const serverId = pickedServerId === undefined ? (servers.data?.[0]?.id ?? null) : pickedServerId;
@@ -108,6 +116,7 @@ export function WorkspacePage() {
           )}
         </main>
       ) : null}
+      <DirectCallOverlay />
     </div>
   );
 }

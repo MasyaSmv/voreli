@@ -8,6 +8,7 @@ import {
   formatMessageTimestamp,
   sameLocalDay,
 } from "../../shared/lib/message-date";
+import { formatCallDuration } from "../../shared/lib/call-duration";
 import { Avatar } from "../../shared/ui/Avatar";
 
 export function MessageTimeline({ messages }: { readonly messages: readonly MessageView[] }) {
@@ -33,6 +34,8 @@ function MessageRow({
   readonly message: MessageView;
   readonly locale: string | undefined;
 }) {
+  if (message.callEvent) return <CallHistoryRow message={message} locale={locale} />;
+
   return (
     <li className="group flex gap-3 rounded-xl px-2 py-2.5 transition hover:bg-panel/55">
       <Avatar name={message.author.displayName} url={message.author.avatarUrl} />
@@ -53,6 +56,29 @@ function MessageRow({
           {message.text}
         </p>
       </div>
+    </li>
+  );
+}
+
+function CallHistoryRow({
+  message,
+  locale,
+}: {
+  readonly message: MessageView;
+  readonly locale: string | undefined;
+}) {
+  const { t } = useTranslation();
+  const event = message.callEvent;
+  if (!event) return null;
+  const label =
+    event.outcome === "completed"
+      ? t("call.history.completed", { duration: formatCallDuration(event.durationSeconds ?? 0) })
+      : t(`call.history.${event.outcome}`);
+  return (
+    <li className="flex items-center gap-3 px-2 py-3 text-xs text-muted">
+      <span className="h-px flex-1 bg-line" />
+      <span title={formatMessageTimestamp(message.createdAt, locale)}>{label}</span>
+      <span className="h-px flex-1 bg-line" />
     </li>
   );
 }

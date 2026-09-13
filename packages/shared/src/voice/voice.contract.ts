@@ -39,10 +39,19 @@ export interface VoiceParticipantView {
   readonly producers: readonly VoiceProducerView[];
 }
 
-export interface VoiceJoinPayload {
+export interface VoiceChannelJoinPayload {
   readonly channelId: string;
+  readonly mediaRoomId?: never;
   readonly sessionId?: string;
 }
+
+export interface VoiceMediaRoomJoinPayload {
+  readonly mediaRoomId: string;
+  readonly channelId?: never;
+  readonly sessionId?: string;
+}
+
+export type VoiceJoinPayload = VoiceChannelJoinPayload | VoiceMediaRoomJoinPayload;
 
 export interface VoiceJoinResponse {
   readonly sessionId: string;

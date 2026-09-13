@@ -110,13 +110,15 @@ export class VoiceGateway extends AuthenticatedGateway {
     @MessageBody() payload: VoiceJoinPayload,
   ): Promise<Ack<VoiceJoinResponse>> {
     return this.guarded(socket, async (identity) => {
+      const mediaRoomId = "mediaRoomId" in payload ? payload.mediaRoomId : payload.channelId;
       const response = await this.rooms.join(
         identity.user.id,
+        identity.sessionId,
         socket.id,
-        payload.channelId,
+        mediaRoomId,
         payload.sessionId,
       );
-      await this.membership.move(socket, payload.channelId);
+      await this.membership.move(socket, mediaRoomId);
       return { ok: true as const, data: response };
     });
   }
@@ -124,7 +126,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   @SubscribeMessage(VoiceClientEvent.Leave)
   async leave(@ConnectedSocket() socket: AuthenticatedSocket): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.rooms.leaveUser(identity.user.id);
+      await this.rooms.leaveAuthenticatedSession(identity.user.id, identity.sessionId);
       await this.membership.leave(socket);
       return { ok: true as const, data: null };
     });
@@ -137,7 +139,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   ): Promise<Ack<CreateTransportResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createTransport(identity.user.id, payload),
+      data: await this.signaling.createTransport(identity.user.id, identity.sessionId, payload),
     }));
   }
 
@@ -147,7 +149,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     @MessageBody() payload: ConnectTransportPayload,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.connectTransport(identity.user.id, payload);
+      await this.signaling.connectTransport(identity.user.id, identity.sessionId, payload);
       return { ok: true as const, data: null };
     });
   }
@@ -159,7 +161,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   ): Promise<Ack<RestartIceResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.restartIce(identity.user.id, payload),
+      data: await this.signaling.restartIce(identity.user.id, identity.sessionId, payload),
     }));
   }
 
@@ -170,7 +172,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   ): Promise<Ack<CreateProducerResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createProducer(identity.user.id, payload),
+      data: await this.signaling.createProducer(identity.user.id, identity.sessionId, payload),
     }));
   }
 
@@ -181,7 +183,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   ): Promise<Ack<CreateConsumerResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createConsumer(identity.user.id, payload),
+      data: await this.signaling.createConsumer(identity.user.id, identity.sessionId, payload),
     }));
   }
 
@@ -191,7 +193,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     @MessageBody() payload: ResumeConsumerPayload,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.resumeConsumer(identity.user.id, payload);
+      await this.signaling.resumeConsumer(identity.user.id, identity.sessionId, payload);
       return { ok: true as const, data: null };
     });
   }
@@ -202,7 +204,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     @MessageBody() payload: SetVoiceSelfStatePayload,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.setSelfState(identity.user.id, payload);
+      await this.signaling.setSelfState(identity.user.id, identity.sessionId, payload);
       return { ok: true as const, data: null };
     });
   }

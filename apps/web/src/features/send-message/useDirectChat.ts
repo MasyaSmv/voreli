@@ -3,10 +3,14 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { fetchDirectHistory } from "../../entities/direct-conversation/direct-conversation.api";
+import { useDirectCall } from "../../entities/direct-call/direct-call.store";
 import { stringField, useRealtimeConversation } from "./useRealtimeConversation";
 
 export function useDirectChat(conversationId: string | null) {
   const { t } = useTranslation();
+  const callHistoryRevision = useDirectCall((state) =>
+    state.lastEndedConversationId === conversationId ? state.historyRevision : 0,
+  );
   const adapter = useMemo(
     () =>
       conversationId === null
@@ -44,10 +48,11 @@ export function useDirectChat(conversationId: string | null) {
               stringField(event, "conversationId") === conversationId,
             invalidate: () => [["direct-conversations"], ["relationships"]],
             retainMessagesOnRevoke: true,
+            refreshKey: callHistoryRevision,
             historyError: t("direct.errors.history"),
             revokedError: t("direct.errors.accessRevoked"),
           },
-    [conversationId, t],
+    [callHistoryRevision, conversationId, t],
   );
 
   return useRealtimeConversation(adapter);

@@ -17,6 +17,10 @@ const EVENT_NAMES: readonly DomainEventName[] = [
   "member.joined",
   "relationship.changed",
   "contact.policy.changed",
+  "media.participant.left",
+  "media.participant.reconnecting",
+  "call.terminal",
+  "media.call.empty",
 ];
 
 const CHANNEL_PREFIX = "voreli:domain-events:";
@@ -67,6 +71,26 @@ function parsePayload<Name extends DomainEventName>(
 
   if (name === "contact.policy.changed") {
     return nonEmptyString(record["userId"]) ? (record as unknown as DomainEventMap[Name]) : null;
+  }
+
+  if (name === "media.participant.left") {
+    return nonEmptyString(record["mediaRoomId"]) && nonEmptyString(record["userId"])
+      ? (record as unknown as DomainEventMap[Name])
+      : null;
+  }
+
+  if (name === "media.participant.reconnecting") {
+    return nonEmptyString(record["mediaRoomId"]) &&
+      nonEmptyString(record["userId"]) &&
+      typeof record["reconnecting"] === "boolean"
+      ? (record as unknown as DomainEventMap[Name])
+      : null;
+  }
+
+  if (name === "call.terminal" || name === "media.call.empty") {
+    return nonEmptyString(record["mediaRoomId"])
+      ? (record as unknown as DomainEventMap[Name])
+      : null;
   }
 
   return nonEmptyString(record["channelId"]) ? (record as unknown as DomainEventMap[Name]) : null;

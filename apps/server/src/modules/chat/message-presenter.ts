@@ -1,6 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import type { Message, User } from "@prisma/client";
-import { decodeTextContent, type MessageView } from "@voreli/shared";
+import {
+  CALL_EVENT_CONTENT_SCHEMA,
+  decodeCallEventContent,
+  decodeTextContent,
+  type MessageView,
+} from "@voreli/shared";
 
 export type MessageWithAuthor = Message & { author: User };
 
@@ -23,7 +28,15 @@ export class MessagePresenter {
         displayName: message.author.displayName,
         avatarUrl: message.author.avatarUrl,
       },
-      text: decodeTextContent(message.content),
+      text:
+        message.contentSchema === CALL_EVENT_CONTENT_SCHEMA
+          ? ""
+          : decodeTextContent(message.content),
+      contentSchema: message.contentSchema,
+      callEvent:
+        message.contentSchema === CALL_EVENT_CONTENT_SCHEMA
+          ? decodeCallEventContent(message.content)
+          : null,
       replyToId: message.replyToId,
       createdAt: message.createdAt.toISOString(),
       editedAt: message.editedAt?.toISOString() ?? null,

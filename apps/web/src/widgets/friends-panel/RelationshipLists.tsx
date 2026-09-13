@@ -2,6 +2,7 @@ import type { ContactProfile, DirectConversationView, RelationshipsView } from "
 import { useTranslation } from "react-i18next";
 
 import { Avatar } from "../../shared/ui/Avatar";
+import { formatCallDuration } from "../../shared/lib/call-duration";
 
 interface RelationshipListsProps {
   readonly relationships: RelationshipsView | undefined;
@@ -105,6 +106,16 @@ function ConversationRow({
   readonly conversation: DirectConversationView;
   readonly onOpen: (value: DirectConversationView) => void;
 }) {
+  const { t } = useTranslation();
+  const lastMessage = conversation.lastMessage;
+  const preview =
+    lastMessage?.callEvent === null || lastMessage?.callEvent === undefined
+      ? lastMessage?.text
+      : lastMessage.callEvent.outcome === "completed"
+        ? t("call.history.completed", {
+            duration: formatCallDuration(lastMessage.callEvent.durationSeconds ?? 0),
+          })
+        : t(`call.history.${lastMessage.callEvent.outcome}`);
   return (
     <button
       type="button"
@@ -121,7 +132,7 @@ function ConversationRow({
         </span>
         <span className="block truncate text-xs text-muted">
           @{conversation.participant.username}
-          {conversation.lastMessage === null ? null : ` · ${conversation.lastMessage.text}`}
+          {preview ? ` · ${preview}` : null}
         </span>
       </span>
       {conversation.unreadCount > 0 ? (

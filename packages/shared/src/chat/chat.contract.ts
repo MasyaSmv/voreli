@@ -1,3 +1,5 @@
+import type { CallEventContentV1 } from "../call/call.contract.js";
+
 /**
  * Realtime chat contract. Both halves of every event live here so the client cannot emit a
  * payload the server does not read, and the server cannot rename a field without breaking
@@ -56,6 +58,8 @@ export interface MessageView {
   readonly directConversationId: string | null;
   readonly author: MessageAuthor;
   readonly text: string;
+  readonly contentSchema: string;
+  readonly callEvent: CallEventContentV1 | null;
   readonly replyToId: string | null;
   readonly createdAt: string;
   readonly editedAt: string | null;

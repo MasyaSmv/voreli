@@ -34,7 +34,7 @@ if serialized then
   if existing.evicting then return {'EVICTING'} end
 end
 
-if existing and ARGV[3] ~= '' and existing.sessionId == ARGV[3] and existing.socketId == cjson.null then
+if existing and ARGV[3] ~= '' and existing.sessionId == ARGV[3] and existing.authenticationSessionId == ARGV[9] and existing.socketId == cjson.null then
   existing.generation = generation
   existing.socketId = ARGV[4]
   existing.disconnectedAt = cjson.null
@@ -49,7 +49,7 @@ end
 if not existing and redis.call('HLEN', KEYS[2]) >= tonumber(ARGV[8]) then return {'FULL'} end
 
 local participant = {
-  userId = ARGV[1], sessionId = ARGV[5], generation = generation, socketId = ARGV[4],
+  userId = ARGV[1], authenticationSessionId = ARGV[9], sessionId = ARGV[5], generation = generation, socketId = ARGV[4],
   selfMuted = false, selfDeafened = false, moderatorMuted = false,
   joinedAt = ARGV[6], disconnectedAt = cjson.null
 }
@@ -152,6 +152,7 @@ function parseParticipant(serialized: string): VoiceParticipantState {
 
   return {
     userId: String(parsed["userId"]),
+    authenticationSessionId: String(parsed["authenticationSessionId"]),
     sessionId: String(parsed["sessionId"]),
     generation: Number(parsed["generation"]),
     socketId: typeof parsed["socketId"] === "string" ? parsed["socketId"] : null,
@@ -227,7 +228,8 @@ export class RedisVoiceStateRepository
           input.newSessionId,
           input.now,
           String(this.ttlSeconds),
-          String(this.maxParticipants),
+          String(input.maxParticipants ?? this.maxParticipants),
+          input.authenticationSessionId,
         ],
       }),
     );
