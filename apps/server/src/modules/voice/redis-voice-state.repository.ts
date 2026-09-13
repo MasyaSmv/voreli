@@ -7,6 +7,8 @@ import { RedisClientFactory } from "../../infra/redis/redis-client.factory.js";
 import type {
   VoiceJoinInput,
   VoiceJoinResult,
+  VoiceModeratorControlState,
+  VoiceSelfControlState,
   VoiceParticipantState,
   VoiceRoomMeta,
   VoiceStateRepository,
@@ -50,7 +52,7 @@ if not existing and redis.call('HLEN', KEYS[2]) >= tonumber(ARGV[8]) then return
 
 local participant = {
   userId = ARGV[1], authenticationSessionId = ARGV[9], sessionId = ARGV[5], generation = generation, socketId = ARGV[4],
-  selfMuted = false, selfDeafened = false, moderatorMuted = false,
+  selfMuted = false, selfDeafened = false, moderatorMuted = false, moderatorDeafened = false,
   joinedAt = ARGV[6], disconnectedAt = cjson.null
 }
 local joined = cjson.encode(participant)
@@ -109,20 +111,35 @@ redis.call('EXPIRE', meta, ARGV[2])
 return 1
 `;
 
-const UPDATE_SELF_STATE_SCRIPT = `
+// Both scripts touch only the half they own, so a self toggle and a moderator toggle racing
+// from two instances cannot clobber each other with a snapshot either of them read earlier.
+const PARTICIPANT_PRELUDE = `
 local serialized = redis.call('HGET', KEYS[1], ARGV[1])
 if not serialized then return '' end
 local participant = cjson.decode(serialized)
-if participant.sessionId ~= ARGV[2] or participant.evicting then return '' end
-participant.selfMuted = ARGV[3] == '1'
-participant.selfDeafened = ARGV[4] == '1'
+if participant.sessionId ~= ARGV[2] or participant.generation ~= tonumber(ARGV[3]) or participant.evicting then return '' end
+`;
+
+const PARTICIPANT_EPILOGUE = `
 local updated = cjson.encode(participant)
 redis.call('HSET', KEYS[1], ARGV[1], updated)
-redis.call('EXPIRE', KEYS[1], ARGV[5])
-redis.call('EXPIRE', KEYS[2], ARGV[5])
-redis.call('EXPIRE', KEYS[3], ARGV[5])
+redis.call('EXPIRE', KEYS[1], ARGV[#ARGV])
+redis.call('EXPIRE', KEYS[2], ARGV[#ARGV])
+redis.call('EXPIRE', KEYS[3], ARGV[#ARGV])
 return updated
 `;
+
+const UPDATE_SELF_STATE_SCRIPT = `${PARTICIPANT_PRELUDE}
+participant.selfMuted = ARGV[4] == '1'
+participant.selfDeafened = ARGV[5] == '1'
+${PARTICIPANT_EPILOGUE}`;
+
+const UPDATE_MODERATOR_STATE_SCRIPT = `${PARTICIPANT_PRELUDE}
+if (participant.moderatorMuted == true) ~= (ARGV[4] == '1') then return '' end
+if (participant.moderatorDeafened == true) ~= (ARGV[5] == '1') then return '' end
+participant.moderatorMuted = ARGV[6] == '1'
+participant.moderatorDeafened = ARGV[7] == '1'
+${PARTICIPANT_EPILOGUE}`;
 
 const CLEAN_ROOM_SCRIPT = `
 if redis.call('HGET', KEYS[1], 'instanceId') ~= ARGV[1] then return 0 end
@@ -159,6 +176,7 @@ function parseParticipant(serialized: string): VoiceParticipantState {
     selfMuted: parsed["selfMuted"] === true,
     selfDeafened: parsed["selfDeafened"] === true,
     moderatorMuted: parsed["moderatorMuted"] === true,
+    moderatorDeafened: parsed["moderatorDeafened"] === true,
     joinedAt: String(parsed["joinedAt"]),
     disconnectedAt: typeof parsed["disconnectedAt"] === "string" ? parsed["disconnectedAt"] : null,
   };
@@ -326,22 +344,48 @@ export class RedisVoiceStateRepository
     );
   }
 
-  async updateSelfState(
+  updateSelfState(
     channelId: string,
     userId: string,
     sessionId: string,
-    selfMuted: boolean,
-    selfDeafened: boolean,
+    generation: number,
+    state: VoiceSelfControlState,
   ): Promise<VoiceParticipantState | null> {
-    const result = await this.redis.eval(UPDATE_SELF_STATE_SCRIPT, {
+    return this.updateParticipant(UPDATE_SELF_STATE_SCRIPT, channelId, userId, [
+      sessionId,
+      String(generation),
+      state.selfMuted ? "1" : "0",
+      state.selfDeafened ? "1" : "0",
+    ]);
+  }
+
+  updateModeratorState(
+    channelId: string,
+    userId: string,
+    sessionId: string,
+    generation: number,
+    expected: VoiceModeratorControlState,
+    next: VoiceModeratorControlState,
+  ): Promise<VoiceParticipantState | null> {
+    return this.updateParticipant(UPDATE_MODERATOR_STATE_SCRIPT, channelId, userId, [
+      sessionId,
+      String(generation),
+      expected.moderatorMuted ? "1" : "0",
+      expected.moderatorDeafened ? "1" : "0",
+      next.moderatorMuted ? "1" : "0",
+      next.moderatorDeafened ? "1" : "0",
+    ]);
+  }
+
+  private async updateParticipant(
+    script: string,
+    channelId: string,
+    userId: string,
+    state: readonly string[],
+  ): Promise<VoiceParticipantState | null> {
+    const result = await this.redis.eval(script, {
       keys: [roomKey(channelId), userKey(userId), metaKey(channelId)],
-      arguments: [
-        userId,
-        sessionId,
-        selfMuted ? "1" : "0",
-        selfDeafened ? "1" : "0",
-        String(this.ttlSeconds),
-      ],
+      arguments: [userId, ...state, String(this.ttlSeconds)],
     });
     return typeof result === "string" && result.length > 0 ? parseParticipant(result) : null;
   }

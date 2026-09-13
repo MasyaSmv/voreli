@@ -27,6 +27,7 @@ import {
 } from "./voice-state.repository.js";
 import { VoiceBroadcaster } from "./voice-broadcaster.js";
 import { MediaRoomAccessService } from "./media-room-access.service.js";
+import { VoiceParticipantControlService } from "./voice-participant-control.service.js";
 
 @Injectable()
 export class VoiceSignalingService {
@@ -36,6 +37,7 @@ export class VoiceSignalingService {
     private readonly access: MediaRoomAccessService,
     private readonly speaking: SpeakingService,
     private readonly broadcaster: VoiceBroadcaster,
+    private readonly controls: VoiceParticipantControlService,
   ) {}
 
   async createTransport(
@@ -136,7 +138,7 @@ export class VoiceSignalingService {
     await this.media.resumeConsumer(
       participant.sessionId,
       payload.consumerId,
-      participant.selfDeafened,
+      participant.selfDeafened || participant.moderatorDeafened,
     );
   }
 
@@ -145,42 +147,7 @@ export class VoiceSignalingService {
     authenticationSessionId: string,
     payload: SetVoiceSelfStatePayload,
   ): Promise<VoiceParticipantView> {
-    const { channelId, participant: before } = await this.context(userId, authenticationSessionId);
-    const participant = await this.state.updateSelfState(
-      channelId,
-      userId,
-      before.sessionId,
-      payload.selfMuted,
-      payload.selfDeafened,
-    );
-    if (!participant) throw new VoiceSessionNotFoundError();
-
-    try {
-      await Promise.all([
-        this.media.setProducerPaused(
-          participant.sessionId,
-          participant.selfMuted || participant.moderatorMuted,
-        ),
-        this.media.setConsumersPaused(participant.sessionId, participant.selfDeafened),
-      ]);
-    } catch (error: unknown) {
-      await this.state.updateSelfState(
-        channelId,
-        userId,
-        before.sessionId,
-        before.selfMuted,
-        before.selfDeafened,
-      );
-      await Promise.all([
-        this.media.setProducerPaused(before.sessionId, before.selfMuted || before.moderatorMuted),
-        this.media.setConsumersPaused(before.sessionId, before.selfDeafened),
-      ]);
-      throw error;
-    }
-
-    const view = this.view(participant);
-    this.broadcaster.participantUpdated(channelId, view);
-    return view;
+    return this.controls.setSelfState(userId, authenticationSessionId, payload);
   }
 
   async closeProducersForUser(userId: string): Promise<void> {
@@ -216,6 +183,8 @@ export class VoiceSignalingService {
       userId: participant.userId,
       selfMuted: participant.selfMuted,
       selfDeafened: participant.selfDeafened,
+      moderatorMuted: participant.moderatorMuted,
+      moderatorDeafened: participant.moderatorDeafened,
       producers: this.media.producersOfSession(participant.sessionId),
     };
   }

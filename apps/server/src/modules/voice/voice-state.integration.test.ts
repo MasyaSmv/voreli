@@ -120,6 +120,150 @@ describe("Redis voice state", () => {
     await expect(repository.participant("channel", "user")).resolves.toBeNull();
   });
 
+  it("keeps moderator state on resume but resets it for a new participation", async () => {
+    await claim("channel");
+    const joined = await join({
+      channelId: "channel",
+      socketId: "socket",
+      newSessionId: "session",
+    });
+    if (joined.kind !== "joined") throw new Error("Expected a fresh voice participation");
+
+    const moderated = await repository.updateModeratorState(
+      "channel",
+      "user",
+      joined.participant.sessionId,
+      joined.participant.generation,
+      { moderatorMuted: false, moderatorDeafened: false },
+      { moderatorMuted: true, moderatorDeafened: true },
+    );
+    expect(moderated).toMatchObject({ moderatorMuted: true, moderatorDeafened: true });
+
+    await repository.disconnect("channel", "user", "socket", now());
+    const resumed = await join({
+      channelId: "channel",
+      socketId: "resumed-socket",
+      newSessionId: "unused",
+      resumeSessionId: "session",
+    });
+    expect(resumed.kind === "resumed" ? resumed.participant : null).toMatchObject({
+      moderatorMuted: true,
+      moderatorDeafened: true,
+    });
+
+    if (resumed.kind !== "resumed") throw new Error("Expected the same voice participation");
+    await repository.leave(
+      "channel",
+      "user",
+      resumed.participant.sessionId,
+      resumed.participant.generation,
+    );
+    const fresh = await join({
+      channelId: "channel",
+      socketId: "fresh-socket",
+      newSessionId: "fresh-session",
+    });
+    expect(fresh.kind === "joined" ? fresh.participant : null).toMatchObject({
+      moderatorMuted: false,
+      moderatorDeafened: false,
+    });
+  });
+
+  it("rejects a control update from an old participant generation", async () => {
+    await claim("channel");
+    const joined = await join({
+      channelId: "channel",
+      socketId: "socket",
+      newSessionId: "session",
+    });
+    if (joined.kind !== "joined") throw new Error("Expected a fresh voice participation");
+
+    await expect(
+      repository.updateSelfState(
+        "channel",
+        "user",
+        joined.participant.sessionId,
+        joined.participant.generation + 1,
+        { selfMuted: true, selfDeafened: false },
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      repository.updateModeratorState(
+        "channel",
+        "user",
+        joined.participant.sessionId,
+        joined.participant.generation + 1,
+        { moderatorMuted: false, moderatorDeafened: false },
+        { moderatorMuted: true, moderatorDeafened: false },
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("keeps a self toggle from erasing a moderator mute written under it", async () => {
+    await claim("channel");
+    const joined = await join({
+      channelId: "channel",
+      socketId: "socket",
+      newSessionId: "session",
+    });
+    if (joined.kind !== "joined") throw new Error("Expected a fresh voice participation");
+    const { sessionId, generation } = joined.participant;
+
+    // What a second instance would hold: the participant as it was before the moderation.
+    const stale = joined.participant;
+    await repository.updateModeratorState(
+      "channel",
+      "user",
+      sessionId,
+      generation,
+      { moderatorMuted: false, moderatorDeafened: false },
+      { moderatorMuted: true, moderatorDeafened: false },
+    );
+
+    const afterSelf = await repository.updateSelfState("channel", "user", sessionId, generation, {
+      selfMuted: !stale.selfMuted,
+      selfDeafened: stale.selfDeafened,
+    });
+
+    expect(afterSelf).toMatchObject({ selfMuted: true, moderatorMuted: true });
+  });
+
+  it("refuses a moderator write whose decision was made about flags that have since moved", async () => {
+    await claim("channel");
+    const joined = await join({
+      channelId: "channel",
+      socketId: "socket",
+      newSessionId: "session",
+    });
+    if (joined.kind !== "joined") throw new Error("Expected a fresh voice participation");
+    const { sessionId, generation } = joined.participant;
+
+    await repository.updateModeratorState(
+      "channel",
+      "user",
+      sessionId,
+      generation,
+      { moderatorMuted: false, moderatorDeafened: false },
+      { moderatorMuted: true, moderatorDeafened: false },
+    );
+
+    // A second moderator authorised this while the flags still read false.
+    await expect(
+      repository.updateModeratorState(
+        "channel",
+        "user",
+        sessionId,
+        generation,
+        { moderatorMuted: false, moderatorDeafened: false },
+        { moderatorMuted: false, moderatorDeafened: true },
+      ),
+    ).resolves.toBeNull();
+    await expect(repository.participant("channel", "user")).resolves.toMatchObject({
+      moderatorMuted: true,
+      moderatorDeafened: false,
+    });
+  });
+
   it("keeps all presence keys alive on heartbeat and removes only own orphaned rooms", async () => {
     await claim("own-channel", "own-instance");
     await join({

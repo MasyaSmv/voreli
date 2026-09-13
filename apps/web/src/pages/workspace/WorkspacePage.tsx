@@ -79,9 +79,6 @@ export function WorkspacePage() {
           activeChannelId={channelId}
           onSelect={(channel) => {
             setPickedChannelId(channel.id);
-            if (channel.type === "VOICE") {
-              void voiceSession.join(channel.id).catch(() => undefined);
-            }
           }}
           onLogout={() =>
             void voiceSession
@@ -110,7 +107,7 @@ export function WorkspacePage() {
       {serverId !== null ? (
         <main className="flex min-w-0 flex-1 flex-col bg-canvas">
           {activeChannel?.type === "VOICE" ? (
-            <VoicePanel channel={activeChannel} />
+            <VoicePanel channel={activeChannel} permissions={server.data?.permissions ?? "0"} />
           ) : (
             <ChatPanel channel={activeChannel} />
           )}

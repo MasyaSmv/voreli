@@ -103,7 +103,7 @@ export class DirectCallSession {
   async accept(): Promise<void> {
     const call = useDirectCall.getState().call;
     if (!call) return;
-    const microphone = navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const microphone = voiceSession.captureMicrophone();
     void microphone.catch(() => undefined);
     this.preparedMicrophone = microphone;
     try {
@@ -218,8 +218,8 @@ export class DirectCallSession {
   }
 
   private async stopMicrophone(microphone: Promise<MediaStream>): Promise<void> {
-    const stream = await microphone.catch(() => null);
-    stream?.getTracks().forEach((track) => track.stop());
+    await microphone.catch(() => null);
+    voiceSession.releaseIdleMicrophone();
   }
 
   private stopQualityObserver(): void {

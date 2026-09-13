@@ -310,6 +310,8 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
       userId: participant.userId,
       selfMuted: participant.selfMuted,
       selfDeafened: participant.selfDeafened,
+      moderatorMuted: participant.moderatorMuted,
+      moderatorDeafened: participant.moderatorDeafened,
       producers: this.media.has(participant.sessionId)
         ? this.media.producersOfSession(participant.sessionId)
         : [],

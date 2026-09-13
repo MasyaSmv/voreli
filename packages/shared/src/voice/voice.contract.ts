@@ -12,6 +12,7 @@ export const VoiceClientEvent = {
   CreateConsumer: "consumer:create",
   ResumeConsumer: "consumer:resume",
   SetSelfState: "voice:self-state",
+  SetModeratorState: "voice:moderator-state",
   RefreshAuth: "auth:refresh",
 } as const;
 
@@ -36,6 +37,8 @@ export interface VoiceParticipantView {
   readonly userId: string;
   readonly selfMuted: boolean;
   readonly selfDeafened: boolean;
+  readonly moderatorMuted: boolean;
+  readonly moderatorDeafened: boolean;
   readonly producers: readonly VoiceProducerView[];
 }
 
@@ -114,6 +117,13 @@ export interface ResumeConsumerPayload {
 export interface SetVoiceSelfStatePayload {
   readonly selfMuted: boolean;
   readonly selfDeafened: boolean;
+}
+
+export interface SetVoiceModeratorStatePayload {
+  readonly channelId: string;
+  readonly userId: string;
+  readonly moderatorMuted: boolean;
+  readonly moderatorDeafened: boolean;
 }
 
 export interface VoiceParticipantJoinedEvent {

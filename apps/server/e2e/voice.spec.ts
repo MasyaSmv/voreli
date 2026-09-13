@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
-import { ContactAudience, DEFAULT_EVERYONE_PERMISSIONS } from "@voreli/shared";
+import { ContactAudience, DEFAULT_EVERYONE_PERMISSIONS, Permission } from "@voreli/shared";
 import argon2 from "argon2";
 
 const prisma = new PrismaClient();
@@ -20,6 +20,7 @@ const clientAddresses = {
 };
 const userIds: string[] = [];
 let serverId: string;
+let bobUserId: string;
 const textChannelName = "general";
 
 test.beforeAll(async () => {
@@ -27,6 +28,7 @@ test.beforeAll(async () => {
   const aliceId = randomUUID();
   const bobId = randomUUID();
   const charlieId = randomUUID();
+  bobUserId = bobId;
   userIds.push(aliceId, bobId, charlieId);
   serverId = randomUUID();
   const roleId = randomUUID();
@@ -440,7 +442,12 @@ test("chat and voice work while three clients receive every remote track through
     await expect(alice.getByText(message)).toBeVisible();
 
     await alice.getByRole("button", { name: /Голосовой/ }).click();
+    await alice.getByRole("button", { name: "Настройки голоса" }).click();
+    await alice.getByRole("button", { name: "Проверить микрофон" }).click();
+    await expect.poll(() => capturedTrackStates(alice)).toEqual(["live"]);
+    await alice.getByRole("button", { name: "Подключиться" }).click();
     await expect(alice.getByText("Голос подключён")).toBeVisible();
+    await expect.poll(() => capturedTrackStates(alice)).toEqual(["live"]);
 
     await alice.getByRole("button", { name: "Проверить эхо" }).click();
     await expect.poll(() => alice.locator("audio").count()).toBe(1);
@@ -448,6 +455,7 @@ test("chat and voice work while three clients receive every remote track through
 
     await login(bob, bobUsername);
     await bob.getByRole("button", { name: /Голосовой/ }).click();
+    await bob.getByRole("button", { name: "Подключиться" }).click();
     await expect(bob.getByText("Голос подключён")).toBeVisible();
 
     await expect.poll(() => bob.locator("audio").count()).toBe(1);
@@ -462,24 +470,82 @@ test("chat and voice work while three clients receive every remote track through
     await expect(alice.getByRole("button", { name: "Выключить микрофон" })).toBeVisible();
     await waitForInboundAudioToResume(bob);
 
+    const bobParticipant = alice
+      .getByRole("listitem")
+      .filter({ hasText: `Участник ${bobUserId.slice(0, 6)}` });
+    await bobParticipant.getByRole("button", { name: "Заглушить" }).click();
+    await expect(bob.getByText("Микрофон выключен")).toBeVisible();
+    await bob.getByRole("button", { name: "Выключить микрофон" }).click();
+    await bob.getByRole("button", { name: "Включить микрофон" }).click();
+    await expect(bob.getByText("Микрофон выключен")).toBeVisible();
+    await bobParticipant.getByRole("button", { name: "Снять заглушение" }).click();
+
+    await bob.getByRole("button", { name: "Настройки голоса" }).click();
+    const peerConnectionsBeforeInputChange = await voicePeerConnectionCount(bob);
+    const microphoneSelect = bob.getByRole("combobox", { name: /Микрофон/ });
+    const inputOptions = microphoneSelect.locator("option");
+    if ((await inputOptions.count()) > 1) {
+      await microphoneSelect.selectOption({ index: 1 });
+      await expect.poll(() => capturedTrackStates(bob)).toContain("ended");
+      await expect.poll(() => capturedTrackStates(bob)).toContain("live");
+      await expect(voicePeerConnectionCount(bob)).resolves.toBe(peerConnectionsBeforeInputChange);
+    }
+
+    await bob.getByLabel("Режим ввода").selectOption("push-to-talk");
+    await waitForOutboundAudioToStop(bob);
+    await bob.keyboard.down("KeyV");
+    await waitForOutboundAudioToResume(bob);
+    await bob.keyboard.up("KeyV");
+    await waitForOutboundAudioToStop(bob);
+    await bob.keyboard.down("KeyV");
+    await waitForOutboundAudioToResume(bob);
+    await bob.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await waitForOutboundAudioToStop(bob);
+    await bob.keyboard.up("KeyV");
+    await bob.getByLabel("Клавиша PTT").focus();
+    await bob.keyboard.down("KeyV");
+    await waitForOutboundAudioToStop(bob);
+    await bob.keyboard.up("KeyV");
+    await bob.getByLabel("Режим ввода").selectOption("voice-activity");
+    await waitForOutboundAudioToResume(bob);
+
     await bob.getByRole("button", { name: "Выключить звук" }).click();
     await waitForPausedPlayback(bob, 1);
 
+    const [voiceChannel, charlieMember] = await Promise.all([
+      prisma.channel.findFirstOrThrow({ where: { serverId, name: "Голосовой" } }),
+      prisma.member.findFirstOrThrow({
+        where: { serverId, user: { username: charlieUsername } },
+      }),
+    ]);
+    await prisma.channelOverride.create({
+      data: {
+        id: randomUUID(),
+        channelId: voiceChannel.id,
+        memberId: charlieMember.id,
+        deny: Permission.Speak,
+      },
+    });
     await login(charlie, charlieUsername);
     await charlie.getByRole("button", { name: /Голосовой/ }).click();
+    await charlie.getByRole("button", { name: "Подключиться" }).click();
     await expect(charlie.getByText("Голос подключён")).toBeVisible();
+    await expect.poll(() => capturedTrackStates(charlie)).toEqual(["ended"]);
 
     await waitForLiveAudio(charlie, 2);
-    await waitForPausedPlayback(bob, 2);
-    await waitForLiveAudio(alice, 3);
+    await waitForPausedPlayback(bob, 1);
+    await waitForLiveAudio(alice, 2);
 
     await bob.getByRole("button", { name: "Включить звук" }).click();
-    await waitForLiveAudio(bob, 2);
+    await waitForLiveAudio(bob, 1);
 
+    await bobParticipant.getByRole("button", { name: "Заглушить" }).click();
     await bobContext.setOffline(true);
     await expect(bob.getByText("Восстанавливаем соединение…")).toBeVisible({ timeout: 30_000 });
     await bobContext.setOffline(false);
     await expect(bob.getByText("Голос подключён")).toBeVisible({ timeout: 30_000 });
+    await expect(bob.getByText("Микрофон выключен")).toBeVisible();
+    await bobParticipant.getByRole("button", { name: "Снять заглушение" }).click();
     await waitForInboundAudioToResume(bob);
   } finally {
     await closeContext(aliceContext);
@@ -599,6 +665,50 @@ async function inboundAudioBytes(page: Page): Promise<number> {
     }
     return bytes;
   });
+}
+
+async function waitForOutboundAudioToStop(page: Page): Promise<void> {
+  let previous = await outboundAudioBytes(page);
+  await expect
+    .poll(async () => {
+      await page.waitForTimeout(500);
+      const current = await outboundAudioBytes(page);
+      const stopped = current === previous;
+      previous = current;
+      return stopped;
+    })
+    .toBe(true);
+}
+
+async function waitForOutboundAudioToResume(page: Page): Promise<void> {
+  const before = await outboundAudioBytes(page);
+  await expect.poll(() => outboundAudioBytes(page)).toBeGreaterThan(before);
+}
+
+async function outboundAudioBytes(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const instrumentedWindow = window as Window & {
+      __voicePeerConnections?: RTCPeerConnection[];
+    };
+    let bytes = 0;
+    for (const peerConnection of instrumentedWindow.__voicePeerConnections ?? []) {
+      const reports = await peerConnection.getStats();
+      reports.forEach((report) => {
+        if (report.type === "outbound-rtp" && report.kind === "audio") {
+          bytes += Number(report.bytesSent ?? 0);
+        }
+      });
+    }
+    return bytes;
+  });
+}
+
+async function voicePeerConnectionCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      (window as Window & { __voicePeerConnections?: RTCPeerConnection[] }).__voicePeerConnections
+        ?.length ?? 0,
+  );
 }
 
 async function closeContext(context: BrowserContext): Promise<void> {

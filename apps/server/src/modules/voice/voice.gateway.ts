@@ -18,7 +18,7 @@ import {
   type RestartIcePayload,
   type RestartIceResponse,
   type ResumeConsumerPayload,
-  type SetVoiceSelfStatePayload,
+  type VoiceParticipantUpdatedEvent,
   VOICE_NAMESPACE,
   VoiceClientEvent,
   type VoiceJoinPayload,
@@ -38,6 +38,9 @@ import { VoiceBroadcaster } from "./voice-broadcaster.js";
 import { VoiceRoomService } from "./voice-room.service.js";
 import { VoiceSignalingService } from "./voice-signaling.service.js";
 import { VoiceSocketMembershipService } from "./voice-socket-membership.service.js";
+import { VoiceParticipantControlService } from "./voice-participant-control.service.js";
+import { validateSocketPayload } from "../../common/validation/validate-socket-payload.js";
+import { SetVoiceModeratorStateDto, SetVoiceSelfStateDto } from "./dto/voice-control.dto.js";
 import { VOICE_STATE_REPOSITORY, type VoiceStateRepository } from "./voice-state.repository.js";
 
 @WebSocketGateway({ namespace: VOICE_NAMESPACE })
@@ -56,6 +59,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     private readonly signaling: VoiceSignalingService,
     private readonly broadcaster: VoiceBroadcaster,
     private readonly membership: VoiceSocketMembershipService,
+    private readonly controls: VoiceParticipantControlService,
   ) {
     super(authentication, events);
   }
@@ -201,11 +205,31 @@ export class VoiceGateway extends AuthenticatedGateway {
   @SubscribeMessage(VoiceClientEvent.SetSelfState)
   async setSelfState(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: SetVoiceSelfStatePayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.setSelfState(identity.user.id, identity.sessionId, payload);
+      await this.signaling.setSelfState(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(SetVoiceSelfStateDto, payload),
+      );
       return { ok: true as const, data: null };
     });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.SetModeratorState)
+  async setModeratorState(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<VoiceParticipantUpdatedEvent>> {
+    return this.guarded(socket, async (identity) => ({
+      ok: true as const,
+      data: {
+        participant: await this.controls.setModeratorState(
+          identity.user.id,
+          validateSocketPayload(SetVoiceModeratorStateDto, payload),
+        ),
+      },
+    }));
   }
 }

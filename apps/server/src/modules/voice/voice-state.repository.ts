@@ -9,6 +9,7 @@ export interface VoiceParticipantState {
   readonly selfMuted: boolean;
   readonly selfDeafened: boolean;
   readonly moderatorMuted: boolean;
+  readonly moderatorDeafened: boolean;
   readonly joinedAt: string;
   readonly disconnectedAt: string | null;
 }
@@ -61,8 +62,36 @@ export interface VoiceStateRepository {
     channelId: string,
     userId: string,
     sessionId: string,
-    selfMuted: boolean,
-    selfDeafened: boolean,
+    generation: number,
+    state: VoiceSelfControlState,
+  ): Promise<VoiceParticipantState | null>;
+  /**
+   * Writes the moderator half only if it still holds `expected`. The caller decided which
+   * permission the change needs by looking at those two flags, so a value that moved in the
+   * meantime means the decision was made about a state that no longer exists.
+   */
+  updateModeratorState(
+    channelId: string,
+    userId: string,
+    sessionId: string,
+    generation: number,
+    expected: VoiceModeratorControlState,
+    next: VoiceModeratorControlState,
   ): Promise<VoiceParticipantState | null>;
   removeRoomsOwnedBy(instanceId: string): Promise<number>;
+}
+
+/**
+ * The two halves are written separately and never as one snapshot: a participant's own mute
+ * and a moderator's mute are issued by different people, land on different instances and
+ * must not be able to overwrite each other with a value each of them merely read earlier.
+ */
+export interface VoiceSelfControlState {
+  readonly selfMuted: boolean;
+  readonly selfDeafened: boolean;
+}
+
+export interface VoiceModeratorControlState {
+  readonly moderatorMuted: boolean;
+  readonly moderatorDeafened: boolean;
 }
