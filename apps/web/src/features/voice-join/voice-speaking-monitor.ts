@@ -2,8 +2,16 @@ import { MicrophoneMeter } from "./microphone-meter";
 import { RemoteSpeakingHold } from "./remote-speaking-hold";
 import type { OwnUserId } from "./voice-identity";
 import type { VoiceSessionState } from "./voice-state";
+import { i18n } from "../../shared/i18n/i18n";
 import { useVoiceSettings } from "../../entities/voice-settings/voice-settings.store";
 import { VoiceInputGate } from "../voice-input/voice-input-gate";
+
+/**
+ * How long a started meter may produce nothing before the gate is opened anyway. A suspended
+ * AudioContext does not run its graph and does not report that it refused to: no samples
+ * arrive, and nothing would ever open the voice-activity gate.
+ */
+const METER_SILENCE_TIMEOUT_MS = 1_500;
 
 export interface LocalVoiceInputGate {
   readonly microphoneServerPaused: boolean;
@@ -25,6 +33,7 @@ export class VoiceSpeakingMonitor {
   private readonly meter = new MicrophoneMeter();
   private readonly remoteHold = new RemoteSpeakingHold();
   private readonly inputGate = new VoiceInputGate();
+  private meterWatchdog: number | undefined;
 
   constructor(
     private readonly state: VoiceSessionState,
@@ -72,8 +81,17 @@ export class VoiceSpeakingMonitor {
   }
 
   observeMicrophone(track: MediaStreamTrack, isEnabled: () => boolean): void {
-    if (!this.audioContext) return;
+    // Without a meter nothing will ever open the voice-activity gate, and a producer that
+    // stays paused forever is silence the person cannot see a reason for. Being heard when
+    // the gate should have held is the better of the two failures, so the gate opens.
+    if (!this.audioContext) {
+      this.openGateWithoutMeter();
+      return;
+    }
+
+    this.armMeterWatchdog();
     this.meter.start(this.audioContext, track, isEnabled, (levelDb, speaking) => {
+      this.clearMeterWatchdog();
       const settings = useVoiceSettings.getState();
       settings.setMicrophoneLevel(levelDb);
       if (settings.inputMode === "voice-activity") {
@@ -140,6 +158,7 @@ export class VoiceSpeakingMonitor {
   }
 
   private stopMicrophoneMetering(): void {
+    this.clearMeterWatchdog();
     this.meter.stop();
     this.localSpeaking = false;
     useVoiceSettings.getState().setMicrophoneLevel(-100);
@@ -147,9 +166,30 @@ export class VoiceSpeakingMonitor {
     this.publish();
   }
 
+  private openGateWithoutMeter(): void {
+    this.media.setInputGateOpen(true);
+    useVoiceSettings.getState().setInputError(i18n.t("voice.devices.meterUnavailable"));
+  }
+
+  private armMeterWatchdog(): void {
+    this.clearMeterWatchdog();
+    this.meterWatchdog = window.setTimeout(() => {
+      this.meterWatchdog = undefined;
+      this.openGateWithoutMeter();
+    }, METER_SILENCE_TIMEOUT_MS);
+  }
+
+  private clearMeterWatchdog(): void {
+    if (this.meterWatchdog === undefined) return;
+    window.clearTimeout(this.meterWatchdog);
+    this.meterWatchdog = undefined;
+  }
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     const settings = useVoiceSettings.getState();
-    if (settings.inputMode !== "push-to-talk") return;
+    // The listener lives as long as the page, so outside a session the assigned key belongs
+    // to the rest of the app and must not be swallowed here.
+    if (settings.inputMode !== "push-to-talk" || !this.state.isConnected) return;
     const handled = this.inputGate.keyDown(
       event.code,
       settings.pushToTalkCode,
@@ -165,7 +205,7 @@ export class VoiceSpeakingMonitor {
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     const settings = useVoiceSettings.getState();
-    if (settings.inputMode !== "push-to-talk") return;
+    if (settings.inputMode !== "push-to-talk" || !this.state.isConnected) return;
     if (this.inputGate.keyUp(event.code, settings.pushToTalkCode)) {
       event.preventDefault();
       this.media.setInputGateOpen(false);

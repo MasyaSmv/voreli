@@ -6,17 +6,28 @@ import type {
 } from "@voreli/shared";
 
 import { VoiceSessionNotFoundError } from "./errors/voice-media-errors.js";
-import { VoiceModerationTargetNotPresentError } from "./errors/voice-room-errors.js";
+import {
+  VoiceModerationStateChangedError,
+  VoiceModerationTargetNotPresentError,
+} from "./errors/voice-room-errors.js";
 import { MediaSessionRegistry } from "./media-session.registry.js";
 import { VoiceBroadcaster } from "./voice-broadcaster.js";
 import { VoiceModerationPolicy } from "./voice-moderation.policy.js";
 import {
   VOICE_STATE_REPOSITORY,
-  type VoiceControlState,
+  type VoiceModeratorControlState,
   type VoiceParticipantState,
   type VoiceStateRepository,
 } from "./voice-state.repository.js";
 
+/**
+ * The single writer of a voice participant's mute and deafen state.
+ *
+ * Self and moderator flags live in one record but are never written as one snapshot: each
+ * command writes only the half it owns, so a self toggle and a moderator toggle racing from
+ * two instances cannot erase each other. The in-process queue only spares the common case a
+ * wasted round trip; correctness rests on the repository, not on the queue.
+ */
 @Injectable()
 export class VoiceParticipantControlService {
   private readonly logger = new Logger(VoiceParticipantControlService.name);
@@ -39,12 +50,21 @@ export class VoiceParticipantControlService {
 
     return this.serialize(channelId, userId, async () => {
       const before = await this.activeParticipant(channelId, userId, authenticationSessionId);
-      return this.apply(channelId, before, {
-        selfMuted: payload.selfMuted,
-        selfDeafened: payload.selfDeafened,
-        moderatorMuted: before.moderatorMuted,
-        moderatorDeafened: before.moderatorDeafened,
-      });
+      const updated = await this.state.updateSelfState(
+        channelId,
+        userId,
+        before.sessionId,
+        before.generation,
+        { selfMuted: payload.selfMuted, selfDeafened: payload.selfDeafened },
+      );
+      if (!updated) throw new VoiceSessionNotFoundError();
+
+      return this.applyMediaOrRollback(channelId, updated, () =>
+        this.state.updateSelfState(channelId, userId, before.sessionId, before.generation, {
+          selfMuted: before.selfMuted,
+          selfDeafened: before.selfDeafened,
+        }),
+      );
     });
   }
 
@@ -58,40 +78,53 @@ export class VoiceParticipantControlService {
         throw new VoiceModerationTargetNotPresentError(payload.userId);
       }
       await this.moderation.assertAllowed(actorId, payload, before);
-      return this.apply(payload.channelId, before, {
-        selfMuted: before.selfMuted,
-        selfDeafened: before.selfDeafened,
+
+      // Which permission this command needs was decided from `expected`, so the write is
+      // refused if either flag moved meanwhile: the decision was made about a state that no
+      // longer exists, and applying it anyway would skip the check the new state requires.
+      const expected = this.moderatorOf(before);
+      const next: VoiceModeratorControlState = {
         moderatorMuted: payload.moderatorMuted,
         moderatorDeafened: payload.moderatorDeafened,
-      });
+      };
+      const updated = await this.state.updateModeratorState(
+        payload.channelId,
+        payload.userId,
+        before.sessionId,
+        before.generation,
+        expected,
+        next,
+      );
+      if (!updated) throw new VoiceModerationStateChangedError(payload.userId);
+
+      return this.applyMediaOrRollback(payload.channelId, updated, () =>
+        this.state.updateModeratorState(
+          payload.channelId,
+          payload.userId,
+          before.sessionId,
+          before.generation,
+          next,
+          expected,
+        ),
+      );
     });
   }
 
-  private async apply(
+  /**
+   * Redis has accepted the change by the time this runs; if mediasoup then refuses, the
+   * stored state is put back so the two cannot disagree. A failed rollback is the one thing
+   * nobody can repair from the outside later, so it is logged with both errors.
+   */
+  private async applyMediaOrRollback(
     channelId: string,
-    before: VoiceParticipantState,
-    control: VoiceControlState,
+    participant: VoiceParticipantState,
+    rollback: () => Promise<VoiceParticipantState | null>,
   ): Promise<VoiceParticipantView> {
-    const participant = await this.state.updateControlState(
-      channelId,
-      before.userId,
-      before.sessionId,
-      before.generation,
-      control,
-    );
-    if (!participant) throw new VoiceSessionNotFoundError();
-
     try {
       await this.applyMedia(participant);
     } catch (error: unknown) {
       try {
-        const restored = await this.state.updateControlState(
-          channelId,
-          before.userId,
-          before.sessionId,
-          before.generation,
-          this.controlOf(before),
-        );
+        const restored = await rollback();
         if (!restored) throw new VoiceSessionNotFoundError();
         await this.applyMedia(restored);
       } catch (rollbackError: unknown) {
@@ -100,7 +133,7 @@ export class VoiceParticipantControlService {
           error: rollbackError,
           originalError: error,
           channelId,
-          userId: before.userId,
+          userId: participant.userId,
           operation: "rollbackVoiceParticipantControl",
         });
       }
@@ -141,10 +174,8 @@ export class VoiceParticipantControlService {
     ]);
   }
 
-  private controlOf(participant: VoiceParticipantState): VoiceControlState {
+  private moderatorOf(participant: VoiceParticipantState): VoiceModeratorControlState {
     return {
-      selfMuted: participant.selfMuted,
-      selfDeafened: participant.selfDeafened,
       moderatorMuted: participant.moderatorMuted,
       moderatorDeafened: participant.moderatorDeafened,
     };
@@ -153,7 +184,9 @@ export class VoiceParticipantControlService {
   private view(participant: VoiceParticipantState): VoiceParticipantView {
     return {
       userId: participant.userId,
-      ...this.controlOf(participant),
+      selfMuted: participant.selfMuted,
+      selfDeafened: participant.selfDeafened,
+      ...this.moderatorOf(participant),
       producers: this.media.producersOfSession(participant.sessionId),
     };
   }

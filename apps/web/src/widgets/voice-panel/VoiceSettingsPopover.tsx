@@ -37,7 +37,7 @@ export function VoiceSettingsPopover({
     return () => mediaDevices.removeEventListener("devicechange", refresh);
   }, [open, setInputError, t]);
 
-  useEffect(() => () => voiceSession.stopMicrophonePreview(), []);
+  useEffect(() => () => voiceSession.releaseIdleMicrophone(), []);
 
   return (
     <div className="relative">
@@ -47,7 +47,7 @@ export function VoiceSettingsPopover({
         aria-expanded={open}
         onClick={() => {
           if (open && previewing) {
-            voiceSession.stopMicrophonePreview();
+            voiceSession.releaseIdleMicrophone();
             setPreviewing(false);
           }
           setOpen(!open);
@@ -136,7 +136,7 @@ export function VoiceSettingsPopover({
             <button
               type="button"
               onClick={() => {
-                if (previewing) voiceSession.stopMicrophonePreview();
+                if (previewing) voiceSession.releaseIdleMicrophone();
                 else void voiceSession.previewMicrophone().catch(reportVoiceActionFailure);
                 setPreviewing((value) => !value);
               }}

@@ -84,3 +84,12 @@ export class VoiceModerationHierarchyError extends DomainError {
     super("Voice moderation target is not below the actor in the role hierarchy");
   }
 }
+
+export class VoiceModerationStateChangedError extends DomainError {
+  static readonly CODE = "VOICE_MODERATION_STATE_CHANGED";
+  readonly errorCode = VoiceModerationStateChangedError.CODE;
+
+  constructor(readonly userId: string) {
+    super("Voice moderation state changed while the command was being authorised; retry");
+  }
+}

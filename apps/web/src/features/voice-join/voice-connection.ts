@@ -6,7 +6,14 @@ import type { VoiceSignaling } from "./voice-signaling";
 import type { VoiceSpeakingMonitor } from "./voice-speaking-monitor";
 import type { VoiceSessionState } from "./voice-state";
 
-export interface VoiceInputRelease {
+/**
+ * The owner of the microphone track. Capture goes through it and nowhere else: a track taken
+ * straight from `navigator.mediaDevices` would ignore the person's chosen input and, because
+ * the producer is created with `stopTracks: false`, would keep the microphone live after the
+ * session ends with nobody holding a reference to stop it.
+ */
+export interface VoiceInputSource {
+  capture(): Promise<MediaStream>;
   release(): void;
 }
 
@@ -26,7 +33,7 @@ export class VoiceConnection {
     private readonly state: VoiceSessionState,
     private readonly media: VoiceMedia,
     private readonly speaking: VoiceSpeakingMonitor,
-    private readonly input: VoiceInputRelease,
+    private readonly input: VoiceInputSource,
   ) {}
 
   /**
@@ -91,8 +98,7 @@ export class VoiceConnection {
       if (own) await this.media.setParticipantState(own);
     } else {
       this.closeMedia();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      await this.buildMedia(joined, stream);
+      await this.buildMedia(joined, await this.input.capture());
     }
   }
 

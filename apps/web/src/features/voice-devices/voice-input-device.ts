@@ -1,3 +1,15 @@
+/**
+ * `null` and the absent setting both mean the system default, so they compare equal. Kept
+ * apart from the class because it is the whole of the reuse decision and the only part of it
+ * that can be checked without a real microphone.
+ */
+export function matchesRequestedDevice(
+  activeDeviceId: string | undefined,
+  requestedDeviceId: string | null,
+): boolean {
+  return (activeDeviceId ?? "default") === (requestedDeviceId ?? "default");
+}
+
 export interface VoiceInputTarget {
   replaceInputTrack(track: MediaStreamTrack): Promise<void>;
   observeInputTrack(track: MediaStreamTrack): void;
@@ -70,7 +82,6 @@ export class VoiceInputDevice {
   }
 
   private matches(track: MediaStreamTrack, deviceId: string | null): boolean {
-    const activeId = track.getSettings().deviceId;
-    return deviceId === null || activeId === deviceId || (deviceId === "default" && !activeId);
+    return matchesRequestedDevice(track.getSettings().deviceId, deviceId);
   }
 }

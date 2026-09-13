@@ -148,12 +148,22 @@ class VoiceSession {
     return this.run(() => this.media.startEcho());
   }
 
+  /**
+   * Capture for callers who need the microphone before a room exists — accepting a call, for
+   * one. It goes through the same owner as a join, so the chosen input is honoured and the
+   * track is released with the session instead of outliving it.
+   */
+  captureMicrophone(): Promise<MediaStream> {
+    this.speaking.unlockAudio();
+    return this.devices.capture();
+  }
+
   async previewMicrophone(): Promise<void> {
     await this.devices.preview();
   }
 
-  stopMicrophonePreview(): void {
-    this.devices.stopPreview();
+  releaseIdleMicrophone(): void {
+    this.devices.releaseIdleInput();
   }
 
   async selectInputDevice(deviceId: string | null): Promise<void> {

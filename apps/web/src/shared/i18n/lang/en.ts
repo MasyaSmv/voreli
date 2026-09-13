@@ -221,6 +221,8 @@ export const en = {
       systemOutput: "System output",
       error: "Could not list audio devices",
       outputFallback: "The selected output disappeared; using the system default",
+      meterUnavailable:
+        "Voice activity detection is unavailable, so the microphone stays open. Reload the page or switch to push-to-talk.",
     },
     moderation: {
       mute: "Server mute",

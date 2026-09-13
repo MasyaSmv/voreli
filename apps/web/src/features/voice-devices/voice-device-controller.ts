@@ -54,7 +54,11 @@ export class VoiceDeviceController implements VoiceInputTarget {
     if (track) this.observeInputTrack(track);
   }
 
-  stopPreview(): void {
+  /**
+   * Drops a capture taken for something that never became a session — a preview, or a call
+   * that was abandoned before it connected. A live session keeps its microphone.
+   */
+  releaseIdleInput(): void {
     if (this.state.isActive) return;
     this.meter.stopMetering();
     this.release();
