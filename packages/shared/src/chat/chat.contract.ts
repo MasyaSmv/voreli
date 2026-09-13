@@ -1,3 +1,5 @@
+import type { CallEventContentV1 } from "../call/call.contract.js";
+
 /**
  * Realtime chat contract. Both halves of every event live here so the client cannot emit a
  * payload the server does not read, and the server cannot rename a field without breaking
@@ -12,6 +14,11 @@ export const ClientEvent = {
   SendMessage: "message:send",
   TypingStart: "typing:start",
   MarkRead: "channel:read",
+  DirectSubscribe: "dm:subscribe",
+  DirectUnsubscribe: "dm:unsubscribe",
+  DirectSendMessage: "dm:message-send",
+  DirectTypingStart: "dm:typing-start",
+  DirectMarkRead: "dm:read",
   RefreshAuth: "auth:refresh",
 } as const;
 
@@ -22,6 +29,12 @@ export const ServerEvent = {
   MessageDeleted: "message:deleted",
   Typing: "typing",
   ChannelAccessRevoked: "channel:access-revoked",
+  DirectMessageNew: "dm:message-new",
+  DirectMessageUpdated: "dm:message-updated",
+  DirectMessageDeleted: "dm:message-deleted",
+  DirectTyping: "dm:typing",
+  DirectAccessRevoked: "dm:access-revoked",
+  RelationshipChanged: "dm:relationship-changed",
   Error: "error",
 } as const;
 
@@ -41,9 +54,12 @@ export interface MessageAuthor {
 
 export interface MessageView {
   readonly id: string;
-  readonly channelId: string;
+  readonly channelId: string | null;
+  readonly directConversationId: string | null;
   readonly author: MessageAuthor;
   readonly text: string;
+  readonly contentSchema: string;
+  readonly callEvent: CallEventContentV1 | null;
   readonly replyToId: string | null;
   readonly createdAt: string;
   readonly editedAt: string | null;
@@ -72,6 +88,36 @@ export interface TypingPayload {
 export interface MarkReadPayload {
   readonly channelId: string;
   readonly messageId: string;
+}
+
+export interface DirectConversationPayload {
+  readonly conversationId: string;
+}
+
+export interface DirectSendMessagePayload extends DirectConversationPayload {
+  readonly text: string;
+  readonly replyToId?: string;
+  readonly clientNonce?: string;
+}
+
+export interface DirectMarkReadPayload extends DirectConversationPayload {
+  readonly messageId: string;
+}
+
+export interface DirectTypingEvent {
+  readonly conversationId: string;
+  readonly username: string;
+  readonly displayName: string;
+  readonly until: string;
+}
+
+export interface DirectMessageDeletedEvent {
+  readonly conversationId: string;
+  readonly messageId: string;
+}
+
+export interface DirectAccessRevokedEvent {
+  readonly conversationId: string;
 }
 
 export interface RefreshAuthPayload {

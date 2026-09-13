@@ -17,6 +17,7 @@ export class HttpError extends Error {
  * revoked before it expires. The refresh token is an httpOnly cookie the page cannot see.
  */
 let accessToken: string | null = null;
+let refreshRequest: Promise<boolean> | null = null;
 const accessTokenObservers = new Set<(token: string | null) => void>();
 
 export function setAccessToken(token: string | null): void {
@@ -103,7 +104,25 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return payload as T;
 }
 
-export async function refreshAccessToken(): Promise<boolean> {
+export function refreshAccessToken(): Promise<boolean> {
+  if (refreshRequest !== null) {
+    return refreshRequest;
+  }
+
+  const request = requestAccessTokenRefresh();
+  refreshRequest = request;
+
+  const clearRequest = () => {
+    if (refreshRequest === request) {
+      refreshRequest = null;
+    }
+  };
+  void request.then(clearRequest, clearRequest);
+
+  return request;
+}
+
+async function requestAccessTokenRefresh(): Promise<boolean> {
   try {
     const response = await fetch(`${serverUrl()}/auth/refresh`, {
       method: "POST",

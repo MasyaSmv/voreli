@@ -33,8 +33,7 @@ import {
   AuthenticatedGateway,
   type AuthenticatedSocket,
 } from "../realtime/authenticated.gateway.js";
-import { SocketIdentityService } from "../realtime/socket-identity.service.js";
-import { SocketSessionRegistry } from "../realtime/socket-session.registry.js";
+import { SocketAuthenticationService } from "../realtime/socket-authentication.service.js";
 import { VoiceBroadcaster } from "./voice-broadcaster.js";
 import { VoiceRoomService } from "./voice-room.service.js";
 import { VoiceSignalingService } from "./voice-signaling.service.js";
@@ -50,8 +49,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   private readonly server!: Namespace;
 
   constructor(
-    identities: SocketIdentityService,
-    sessions: SocketSessionRegistry,
+    authentication: SocketAuthenticationService,
     @Inject(DOMAIN_EVENT_BUS) events: DomainEventBus,
     @Inject(VOICE_STATE_REPOSITORY) private readonly state: VoiceStateRepository,
     private readonly rooms: VoiceRoomService,
@@ -59,7 +57,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     private readonly broadcaster: VoiceBroadcaster,
     private readonly membership: VoiceSocketMembershipService,
   ) {
-    super(identities, sessions, events);
+    super(authentication, events);
   }
 
   override afterInit(server: Namespace): void {
@@ -112,13 +110,15 @@ export class VoiceGateway extends AuthenticatedGateway {
     @MessageBody() payload: VoiceJoinPayload,
   ): Promise<Ack<VoiceJoinResponse>> {
     return this.guarded(socket, async (identity) => {
+      const mediaRoomId = "mediaRoomId" in payload ? payload.mediaRoomId : payload.channelId;
       const response = await this.rooms.join(
         identity.user.id,
+        identity.sessionId,
         socket.id,
-        payload.channelId,
+        mediaRoomId,
         payload.sessionId,
       );
-      await this.membership.move(socket, payload.channelId);
+      await this.membership.move(socket, mediaRoomId);
       return { ok: true as const, data: response };
     });
   }
@@ -126,7 +126,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   @SubscribeMessage(VoiceClientEvent.Leave)
   async leave(@ConnectedSocket() socket: AuthenticatedSocket): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.rooms.leaveUser(identity.user.id);
+      await this.rooms.leaveAuthenticatedSession(identity.user.id, identity.sessionId);
       await this.membership.leave(socket);
       return { ok: true as const, data: null };
     });
@@ -139,7 +139,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   ): Promise<Ack<CreateTransportResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createTransport(identity.user.id, payload),
+      data: await this.signaling.createTransport(identity.user.id, identity.sessionId, payload),
     }));
   }
 
@@ -149,7 +149,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     @MessageBody() payload: ConnectTransportPayload,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.connectTransport(identity.user.id, payload);
+      await this.signaling.connectTransport(identity.user.id, identity.sessionId, payload);
       return { ok: true as const, data: null };
     });
   }
@@ -161,7 +161,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   ): Promise<Ack<RestartIceResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.restartIce(identity.user.id, payload),
+      data: await this.signaling.restartIce(identity.user.id, identity.sessionId, payload),
     }));
   }
 
@@ -172,7 +172,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   ): Promise<Ack<CreateProducerResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createProducer(identity.user.id, payload),
+      data: await this.signaling.createProducer(identity.user.id, identity.sessionId, payload),
     }));
   }
 
@@ -183,7 +183,7 @@ export class VoiceGateway extends AuthenticatedGateway {
   ): Promise<Ack<CreateConsumerResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createConsumer(identity.user.id, payload),
+      data: await this.signaling.createConsumer(identity.user.id, identity.sessionId, payload),
     }));
   }
 
@@ -193,7 +193,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     @MessageBody() payload: ResumeConsumerPayload,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.resumeConsumer(identity.user.id, payload);
+      await this.signaling.resumeConsumer(identity.user.id, identity.sessionId, payload);
       return { ok: true as const, data: null };
     });
   }
@@ -204,7 +204,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     @MessageBody() payload: SetVoiceSelfStatePayload,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.setSelfState(identity.user.id, payload);
+      await this.signaling.setSelfState(identity.user.id, identity.sessionId, payload);
       return { ok: true as const, data: null };
     });
   }

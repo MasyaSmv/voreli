@@ -13,8 +13,9 @@ import type { DefaultEventsMap, Namespace, Socket } from "socket.io";
 
 import { type DomainEventBus, type DomainEventMap } from "../../common/events/domain-event-bus.js";
 import { DomainError } from "../../common/errors/domain-error.js";
-import { type SocketIdentity, SocketIdentityService } from "./socket-identity.service.js";
-import { sessionRoomOf, SocketSessionRegistry } from "./socket-session.registry.js";
+import { SocketAuthenticationService } from "./socket-authentication.service.js";
+import type { SocketIdentity } from "./socket-identity.service.js";
+import { sessionRoomOf } from "./socket-session.registry.js";
 
 interface AuthenticatedSocketData {
   userId?: string;
@@ -37,8 +38,7 @@ export abstract class AuthenticatedGateway
   private unsubscribeSessionRevoked?: () => void;
 
   protected constructor(
-    private readonly identities: SocketIdentityService,
-    private readonly sessions: SocketSessionRegistry,
+    private readonly authentication: SocketAuthenticationService,
     private readonly events: DomainEventBus,
   ) {}
 
@@ -57,18 +57,16 @@ export abstract class AuthenticatedGateway
     server.use((socket: AuthenticatedSocket, next: (error?: Error) => void) => {
       const token = (socket.handshake.auth as { token?: unknown } | undefined)?.token;
 
-      this.identities
-        .identify(typeof token === "string" ? token : undefined)
-        .then((identity) => {
-          if (!identity) {
+      this.authentication
+        .authenticate(socket, typeof token === "string" ? token : undefined)
+        .then((authenticated) => {
+          if (!authenticated) {
             next(new Error("UNAUTHENTICATED"));
 
             return;
           }
 
-          return this.sessions.bind(socket, identity).then(() => {
-            next();
-          });
+          next();
         })
         .catch((error: unknown) => {
           this.logger.error({
@@ -109,9 +107,7 @@ export abstract class AuthenticatedGateway
     @AckDecorator() acknowledge: AckCallback<{ userId: string }> | undefined,
   ): Promise<void> {
     const response = await this.guarded(socket, async (currentIdentity) => {
-      const refreshedIdentity = await this.identities.identify(payload.accessToken);
-
-      if (!refreshedIdentity || refreshedIdentity.user.id !== currentIdentity.user.id) {
+      if (!(await this.authentication.refresh(socket, payload.accessToken))) {
         return {
           ok: false as const,
           errorCode: "UNAUTHENTICATED",
@@ -119,9 +115,7 @@ export abstract class AuthenticatedGateway
         };
       }
 
-      await this.sessions.move(socket, currentIdentity, refreshedIdentity);
-
-      return { ok: true as const, data: { userId: refreshedIdentity.user.id } };
+      return { ok: true as const, data: { userId: currentIdentity.user.id } };
     });
 
     acknowledge?.(response);
@@ -148,6 +142,18 @@ export abstract class AuthenticatedGateway
     }
 
     try {
+      if (!(await this.authentication.isActive(socket))) {
+        this.logger.warn({
+          message: "Socket session is no longer active",
+          socketId: socket.id,
+          userId: identity.user.id,
+          sessionId: identity.sessionId,
+        });
+        socket.disconnect(true);
+
+        return { ok: false, errorCode: "UNAUTHENTICATED", message: "Session is no longer active" };
+      }
+
       return await work(identity);
     } catch (error: unknown) {
       if (error instanceof DomainError) {

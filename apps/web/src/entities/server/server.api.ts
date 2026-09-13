@@ -1,4 +1,10 @@
-import type { ServerSummary, ServerView, UnreadResponse } from "@voreli/shared";
+import type {
+  ChannelView,
+  CreateChannelRequest,
+  ServerSummary,
+  ServerView,
+  UnreadResponse,
+} from "@voreli/shared";
 
 import { apiFetch } from "../../shared/api/http";
 
@@ -14,6 +20,16 @@ export async function fetchServer(serverId: string): Promise<ServerView> {
 
 export async function createServer(name: string): Promise<ServerSummary> {
   return apiFetch<ServerSummary>("/servers", { method: "POST", body: { name } });
+}
+
+export async function createChannel(
+  serverId: string,
+  request: CreateChannelRequest,
+): Promise<ChannelView> {
+  return apiFetch<ChannelView>(`/servers/${serverId}/channels`, {
+    method: "POST",
+    body: request,
+  });
 }
 
 export async function fetchUnread(serverId: string): Promise<UnreadResponse> {

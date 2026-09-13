@@ -26,23 +26,24 @@ import {
   type VoiceStateRepository,
 } from "./voice-state.repository.js";
 import { VoiceBroadcaster } from "./voice-broadcaster.js";
-import { VoiceChannelAccessService } from "./voice-channel-access.service.js";
+import { MediaRoomAccessService } from "./media-room-access.service.js";
 
 @Injectable()
 export class VoiceSignalingService {
   constructor(
     @Inject(VOICE_STATE_REPOSITORY) private readonly state: VoiceStateRepository,
     private readonly media: MediaSessionRegistry,
-    private readonly access: VoiceChannelAccessService,
+    private readonly access: MediaRoomAccessService,
     private readonly speaking: SpeakingService,
     private readonly broadcaster: VoiceBroadcaster,
   ) {}
 
   async createTransport(
     userId: string,
+    authenticationSessionId: string,
     payload: CreateTransportPayload,
   ): Promise<CreateTransportResponse> {
-    const { participant } = await this.context(userId);
+    const { participant } = await this.context(userId, authenticationSessionId);
     const transport = await this.media.createTransport(participant.sessionId, payload.direction);
     return {
       id: transport.id,
@@ -52,8 +53,12 @@ export class VoiceSignalingService {
     };
   }
 
-  async connectTransport(userId: string, payload: ConnectTransportPayload): Promise<void> {
-    const { participant } = await this.context(userId);
+  async connectTransport(
+    userId: string,
+    authenticationSessionId: string,
+    payload: ConnectTransportPayload,
+  ): Promise<void> {
+    const { participant } = await this.context(userId, authenticationSessionId);
     await this.media.connectTransport(
       participant.sessionId,
       payload.transportId,
@@ -61,8 +66,12 @@ export class VoiceSignalingService {
     );
   }
 
-  async restartIce(userId: string, payload: RestartIcePayload): Promise<RestartIceResponse> {
-    const { participant } = await this.context(userId);
+  async restartIce(
+    userId: string,
+    authenticationSessionId: string,
+    payload: RestartIcePayload,
+  ): Promise<RestartIceResponse> {
+    const { participant } = await this.context(userId, authenticationSessionId);
     return {
       iceParameters: await this.media.restartIce(participant.sessionId, payload.transportId),
     };
@@ -70,9 +79,10 @@ export class VoiceSignalingService {
 
   async createProducer(
     userId: string,
+    authenticationSessionId: string,
     payload: CreateProducerPayload,
   ): Promise<CreateProducerResponse> {
-    const { channelId, participant } = await this.context(userId);
+    const { channelId, participant } = await this.context(userId, authenticationSessionId);
     if (!(await this.access.canSpeak(userId, channelId))) throw new VoiceSpeakForbiddenError();
 
     const producer = await this.media.createProducer(
@@ -99,9 +109,10 @@ export class VoiceSignalingService {
 
   async createConsumer(
     userId: string,
+    authenticationSessionId: string,
     payload: CreateConsumerPayload,
   ): Promise<CreateConsumerResponse> {
-    const { participant } = await this.context(userId);
+    const { participant } = await this.context(userId, authenticationSessionId);
     const consumer = await this.media.createConsumer(
       participant.sessionId,
       payload.transportId,
@@ -116,8 +127,12 @@ export class VoiceSignalingService {
     };
   }
 
-  async resumeConsumer(userId: string, payload: ResumeConsumerPayload): Promise<void> {
-    const { participant } = await this.context(userId);
+  async resumeConsumer(
+    userId: string,
+    authenticationSessionId: string,
+    payload: ResumeConsumerPayload,
+  ): Promise<void> {
+    const { participant } = await this.context(userId, authenticationSessionId);
     await this.media.resumeConsumer(
       participant.sessionId,
       payload.consumerId,
@@ -127,9 +142,10 @@ export class VoiceSignalingService {
 
   async setSelfState(
     userId: string,
+    authenticationSessionId: string,
     payload: SetVoiceSelfStatePayload,
   ): Promise<VoiceParticipantView> {
-    const { channelId, participant: before } = await this.context(userId);
+    const { channelId, participant: before } = await this.context(userId, authenticationSessionId);
     const participant = await this.state.updateSelfState(
       channelId,
       userId,
@@ -181,11 +197,16 @@ export class VoiceSignalingService {
 
   private async context(
     userId: string,
+    authenticationSessionId: string,
   ): Promise<{ channelId: string; participant: VoiceParticipantState }> {
     const channelId = await this.state.channelOf(userId);
     if (!channelId) throw new VoiceSessionNotFoundError();
     const participant = await this.state.participant(channelId, userId);
-    if (!participant || !this.media.has(participant.sessionId))
+    if (
+      !participant ||
+      participant.authenticationSessionId !== authenticationSessionId ||
+      !this.media.has(participant.sessionId)
+    )
       throw new VoiceSessionNotFoundError();
     return { channelId, participant };
   }

@@ -1,8 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ChannelView, ServerView } from "@voreli/shared";
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ContactAudience, type ChannelView, type ServerView } from "@voreli/shared";
+import { beforeEach, describe, expect, it } from "vitest";
 
+import { useSession } from "../../entities/session/session.store";
 import { ChannelSidebar } from "./ChannelSidebar";
 
 const server: ServerView = {
@@ -30,9 +32,27 @@ const server: ServerView = {
 };
 
 describe("ChannelSidebar", () => {
+  beforeEach(() => {
+    useSession.setState({
+      user: {
+        id: "u1",
+        username: "maxim",
+        displayName: "Максим",
+        avatarUrl: null,
+        createdAt: "2026-09-08T00:00:00.000Z",
+      },
+    });
+  });
+
   it("groups channels by category and puts the rest under a fallback heading", () => {
     render(
-      <ChannelSidebar server={server} unread={[]} activeChannelId={null} onSelect={() => {}} />,
+      <ChannelSidebar
+        server={server}
+        unread={[]}
+        activeChannelId={null}
+        onSelect={() => {}}
+        onLogout={() => {}}
+      />,
     );
 
     expect(screen.getByText("Общее")).toBeInTheDocument();
@@ -51,6 +71,7 @@ describe("ChannelSidebar", () => {
         ]}
         activeChannelId="ch1"
         onSelect={() => {}}
+        onLogout={() => {}}
       />,
     );
 
@@ -68,6 +89,7 @@ describe("ChannelSidebar", () => {
         unread={[]}
         activeChannelId={null}
         onSelect={(channel) => selected.push(channel)}
+        onLogout={() => {}}
       />,
     );
 
@@ -84,10 +106,59 @@ describe("ChannelSidebar", () => {
     };
 
     render(
-      <ChannelSidebar server={empty} unread={[]} activeChannelId={null} onSelect={() => {}} />,
+      <ChannelSidebar
+        server={empty}
+        unread={[]}
+        activeChannelId={null}
+        onSelect={() => {}}
+        onLogout={() => {}}
+      />,
     );
 
     // The server never sends invisible channels, so an empty category must not hint at them.
     expect(screen.queryByText("Закрытая")).toBeNull();
+  });
+
+  it("opens the real server menu for an owner", async () => {
+    render(
+      <ChannelSidebar
+        server={server}
+        unread={[]}
+        activeChannelId={null}
+        onSelect={() => {}}
+        onLogout={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Меню сервера Дом" }));
+
+    expect(screen.getByRole("button", { name: "Создать канал" })).toBeInTheDocument();
+  });
+
+  it("opens profile and language settings from the user dock", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    queryClient.setQueryData(["contact-settings"], {
+      directMessageAudience: ContactAudience.Everyone,
+      directCallAudience: ContactAudience.Everyone,
+      friendRequestAudience: ContactAudience.Everyone,
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ChannelSidebar
+          server={server}
+          unread={[]}
+          activeChannelId={null}
+          onSelect={() => {}}
+          onLogout={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Открыть профиль и настройки" }));
+
+    const settings = screen.getByRole("dialog");
+    expect(within(settings).getByRole("heading", { name: "Настройки" })).toBeInTheDocument();
+    expect(within(settings).getByText("@maxim")).toBeInTheDocument();
+    expect(within(settings).getByRole("group", { name: "Язык" })).toBeInTheDocument();
   });
 });

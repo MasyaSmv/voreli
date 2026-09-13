@@ -6,6 +6,7 @@ import { VoiceSessionState } from "./voice-state";
 
 const state = new VoiceSessionState();
 const ownUserId = "user-alice";
+const monitors: VoiceSpeakingMonitor[] = [];
 
 function speakingUserIds(): readonly string[] {
   return [...useVoice.getState().speakingUserIds].sort();
@@ -15,11 +16,12 @@ function speakingUserIds(): readonly string[] {
 // what is worth pinning here is the merge — whose bubble lights up, and when it stops.
 describe("VoiceSpeakingMonitor", () => {
   afterEach(() => {
+    for (const monitor of monitors.splice(0)) monitor.stopMetering();
     state.idle({ clearError: true });
   });
 
   it("shows the speakers the server reports", () => {
-    const monitor = new VoiceSpeakingMonitor(state, () => ownUserId);
+    const monitor = createMonitor(() => ownUserId);
 
     monitor.setRemote(["user-bob", "user-carol"]);
 
@@ -30,7 +32,7 @@ describe("VoiceSpeakingMonitor", () => {
   // but its report arrives a round trip late and would keep the bubble lit after a mute, so
   // it is overruled for yourself and only for yourself.
   it("never takes the server's word about the local speaker", () => {
-    const monitor = new VoiceSpeakingMonitor(state, () => ownUserId);
+    const monitor = createMonitor(() => ownUserId);
 
     monitor.setRemote([ownUserId, "user-bob"]);
     expect(speakingUserIds()).toEqual(["user-bob"]);
@@ -40,7 +42,7 @@ describe("VoiceSpeakingMonitor", () => {
   });
 
   it("reports the remote set unchanged while nobody is signed in", () => {
-    const monitor = new VoiceSpeakingMonitor(state, () => undefined);
+    const monitor = createMonitor(() => undefined);
 
     monitor.setRemote(["user-bob"]);
 
@@ -48,7 +50,7 @@ describe("VoiceSpeakingMonitor", () => {
   });
 
   it("stops naming anyone once the session ends", () => {
-    const monitor = new VoiceSpeakingMonitor(state, () => ownUserId);
+    const monitor = createMonitor(() => ownUserId);
     monitor.setRemote(["user-bob", "user-carol"]);
 
     monitor.stopMetering();
@@ -57,3 +59,10 @@ describe("VoiceSpeakingMonitor", () => {
     expect(speakingUserIds()).toEqual([]);
   });
 });
+
+function createMonitor(identity: () => string | undefined): VoiceSpeakingMonitor {
+  const monitor = new VoiceSpeakingMonitor(state, identity);
+  monitors.push(monitor);
+
+  return monitor;
+}

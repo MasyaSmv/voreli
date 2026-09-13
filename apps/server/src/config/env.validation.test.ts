@@ -17,6 +17,7 @@ describe("validateEnv", () => {
     expect(env.NODE_ENV).toBe(NodeEnv.Development);
     expect(env.PORT).toBe(3000);
     expect(env.ACCESS_TOKEN_TTL).toBe(900);
+    expect(env.SOCKET_REVALIDATE_INTERVAL).toBe(60);
     expect(env.COOKIE_SECURE).toBe(false);
     expect(env.MEDIASOUP_ANNOUNCED_IP).toBe("127.0.0.1");
     expect(env.MEDIASOUP_RTC_MIN_PORT).toBe(40000);
@@ -27,6 +28,12 @@ describe("validateEnv", () => {
 
   it("coerces PORT from the string the environment always gives us", () => {
     expect(validateEnv({ ...required, PORT: "4000" }).PORT).toBe(4000);
+  });
+
+  it("rejects a zero socket revalidation interval", () => {
+    expect(() => validateEnv({ ...required, SOCKET_REVALIDATE_INTERVAL: "0" })).toThrow(
+      /SOCKET_REVALIDATE_INTERVAL/,
+    );
   });
 
   it("rejects a port outside the valid range", () => {

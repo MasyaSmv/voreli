@@ -7,6 +7,10 @@ export function sessionRoomOf(sessionId: string): string {
   return `session:${sessionId}`;
 }
 
+export function userRoomOf(userId: string): string {
+  return `user:${userId}`;
+}
+
 /** Socket.IO rooms are the distributed registry; this service owns their bookkeeping. */
 @Injectable()
 export class SocketSessionRegistry {
@@ -15,6 +19,7 @@ export class SocketSessionRegistry {
     socket.data.userId = identity.user.id;
     socket.data.sessionId = identity.sessionId;
     await socket.join(sessionRoomOf(identity.sessionId));
+    await socket.join(userRoomOf(identity.user.id));
   }
 
   async move(

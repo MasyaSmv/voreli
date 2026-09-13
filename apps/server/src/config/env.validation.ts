@@ -89,6 +89,12 @@ export class EnvironmentVariables {
   @Max(3600)
   PERMISSION_CACHE_TTL: number = 60;
 
+  /** Maximum time a live socket trusts its last database session check, in seconds. */
+  @IsInt()
+  @Min(1)
+  @Max(3600)
+  SOCKET_REVALIDATE_INTERVAL: number = 60;
+
   /**
    * Number of reverse proxies in front of the server, or 0 when it is exposed directly.
    *
@@ -170,6 +176,11 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   VOICE_RECONNECT_GRACE: number = 20;
+
+  @IsInt()
+  @Min(1_000)
+  @Max(60_000)
+  CALL_RECONCILE_INTERVAL_MS: number = 10_000;
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvironmentVariables {

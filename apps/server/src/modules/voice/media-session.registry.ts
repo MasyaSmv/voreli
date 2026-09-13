@@ -46,6 +46,7 @@ export interface SessionProducerView {
 }
 
 type TransportFailureHandler = (sessionId: string) => Promise<void> | void;
+type TransportReconnectHandler = (sessionId: string, reconnecting: boolean) => Promise<void> | void;
 
 @Injectable()
 export class MediaSessionRegistry implements OnModuleDestroy {
@@ -53,6 +54,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
   private readonly sessions = new Map<string, MediaSession>();
   private readonly producers = new Map<string, RoomProducer>();
   private readonly failureHandlers = new Set<TransportFailureHandler>();
+  private readonly reconnectHandlers = new Set<TransportReconnectHandler>();
+  private readonly reconnectingTransports = new Map<string, Set<string>>();
   private readonly failedSessions = new Set<string>();
   private readonly transportFailureTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly transportFailureGraceMs: number;
@@ -89,6 +92,11 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     return () => this.failureHandlers.delete(handler);
   }
 
+  onTransportReconnect(handler: TransportReconnectHandler): () => void {
+    this.reconnectHandlers.add(handler);
+    return () => this.reconnectHandlers.delete(handler);
+  }
+
   async createTransport(
     sessionId: string,
     direction: TransportDirection,
@@ -108,6 +116,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
 
     transport.observer.once("close", () => {
       this.clearTransportFailureTimer(transport.id);
+      this.clearTransportReconnect(sessionId, transport.id);
       session.transports.delete(transport.id);
     });
     transport.on("dtlsstatechange", (state) => {
@@ -119,9 +128,11 @@ export class MediaSessionRegistry implements OnModuleDestroy {
       if (state === "closed") {
         this.transportFailed(sessionId, transport);
       } else if (state === "disconnected") {
+        this.markTransportReconnecting(sessionId, transport.id);
         this.scheduleTransportFailure(sessionId, transport);
       } else if (state === "connected" || state === "completed") {
         this.clearTransportFailureTimer(transport.id);
+        this.clearTransportReconnect(sessionId, transport.id);
       }
     });
 
@@ -247,14 +258,19 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     producer.close();
   }
 
-  closeSession(sessionId: string): void {
+  closeSession(sessionId: string): readonly SessionProducerView[] | null {
     const session = this.sessions.get(sessionId);
 
     if (!session) {
-      return;
+      return null;
     }
 
     this.sessions.delete(sessionId);
+    this.reconnectingTransports.delete(sessionId);
+    const producers = [...session.producers.values()].map((producer) => ({
+      producerId: producer.id,
+      kind: producer.kind,
+    }));
 
     for (const transport of session.transports.values()) {
       this.clearTransportFailureTimer(transport.transport.id);
@@ -264,6 +280,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     session.transports.clear();
     session.producers.clear();
     session.consumers.clear();
+    return producers;
   }
 
   onModuleDestroy(): void {
@@ -309,6 +326,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     }
 
     this.failedSessions.add(sessionId);
+    this.markTransportReconnecting(sessionId, transport.id);
 
     if (this.failureHandlers.size === 0 && !transport.closed) {
       transport.close();
@@ -349,5 +367,36 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     if (!timer) return;
     clearTimeout(timer);
     this.transportFailureTimers.delete(transportId);
+  }
+
+  private markTransportReconnecting(sessionId: string, transportId: string): void {
+    const transports = this.reconnectingTransports.get(sessionId) ?? new Set<string>();
+    if (transports.has(transportId)) return;
+    const wasReconnecting = transports.size > 0;
+    transports.add(transportId);
+    this.reconnectingTransports.set(sessionId, transports);
+    if (!wasReconnecting) this.emitReconnect(sessionId, true);
+  }
+
+  private clearTransportReconnect(sessionId: string, transportId: string): void {
+    const transports = this.reconnectingTransports.get(sessionId);
+    if (!transports?.delete(transportId)) return;
+    if (transports.size > 0) return;
+    this.reconnectingTransports.delete(sessionId);
+    if (this.sessions.has(sessionId)) this.emitReconnect(sessionId, false);
+  }
+
+  private emitReconnect(sessionId: string, reconnecting: boolean): void {
+    for (const handler of this.reconnectHandlers) {
+      void Promise.resolve(handler(sessionId, reconnecting)).catch((error: unknown) => {
+        this.logger.error({
+          message: "Failed to publish voice transport reconnect state",
+          error,
+          sessionId,
+          reconnecting,
+          operation: "publishVoiceTransportReconnect",
+        });
+      });
+    }
   }
 }

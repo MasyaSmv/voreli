@@ -1,4 +1,5 @@
 import {
+  type CallConnectionQuality,
   type SetVoiceSelfStatePayload,
   VoiceClientEvent,
   type VoiceParticipantView,
@@ -57,12 +58,27 @@ class VoiceSession {
     return this.run(() => this.connection.join(channelId, microphone));
   }
 
+  joinMediaRoom(mediaRoomId: string, preparedMicrophone?: Promise<MediaStream>): Promise<void> {
+    this.speaking.unlockAudio();
+    const microphone =
+      preparedMicrophone ?? navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    void microphone.catch((error: unknown) => this.state.failed(error));
+    return this.run(() => this.connection.join(mediaRoomId, microphone, "media-room"));
+  }
+
+  unlockAudio(): void {
+    this.speaking.unlockAudio();
+  }
+
   leave(): Promise<void> {
     return this.serial(async () => {
-      if (this.state.channelId !== null && this.signaling.connected) {
-        await this.signaling.request<null>(VoiceClientEvent.Leave, {});
+      try {
+        if (this.state.channelId !== null && this.signaling.connected) {
+          await this.signaling.request<null>(VoiceClientEvent.Leave, {});
+        }
+      } finally {
+        this.connection.shutdown({ clearError: true });
       }
-      this.connection.shutdown({ clearError: true });
     });
   }
 
@@ -90,6 +106,13 @@ class VoiceSession {
   startEcho(): Promise<void> {
     this.speaking.unlockAudio();
     return this.run(() => this.media.startEcho());
+  }
+
+  observeNetworkQuality(onQuality: (quality: CallConnectionQuality) => void): () => void {
+    return this.media.observeQuality((quality) => {
+      this.media.setJitterBufferTarget(quality);
+      onQuality(quality);
+    });
   }
 
   /**

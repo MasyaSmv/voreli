@@ -1,16 +1,17 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { encodeTextContent, MESSAGE_PAGE_SIZE, TEXT_CONTENT_SCHEMA } from "@voreli/shared";
+import { Prisma } from "@prisma/client";
+import { encodeTextContent, TEXT_CONTENT_SCHEMA } from "@voreli/shared";
 
 import { ID_GENERATOR, type IdGenerator } from "../../common/services/id-generator.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import { ResourceNotVisibleError } from "../permissions/errors/permission-errors.js";
-import {
-  MessageNotFoundError,
-  NotATextChannelError,
-  ReplyTargetNotInChannelError,
-} from "./errors/chat-errors.js";
+import { ContactPolicyService } from "../relationships/contact-policy.service.js";
+import { DirectConversationService } from "../relationships/direct-conversation.service.js";
+import { NotATextChannelError, ReplyTargetNotInChannelError } from "./errors/chat-errors.js";
 import { ChatBroadcaster } from "./chat-broadcaster.js";
 import { MessagePresenter, type MessageWithAuthor } from "./message-presenter.js";
+import { MessageHistoryService } from "./message-history.service.js";
+import { SystemMessageImmutableError } from "./errors/chat-errors.js";
 
 export interface SendMessageInput {
   readonly channelId: string;
@@ -19,16 +20,12 @@ export interface SendMessageInput {
   readonly replyToId?: string | undefined;
 }
 
-export interface HistoryQuery {
-  readonly channelId: string;
-  /** Id of the oldest message already shown; the page returned is older than it. */
-  readonly before?: string | undefined;
-  readonly limit?: number | undefined;
-}
-
-export interface HistoryPage {
-  readonly messages: readonly MessageWithAuthor[];
-  readonly nextCursor: string | null;
+export interface SendDirectMessageInput {
+  readonly conversationId: string;
+  readonly authorId: string;
+  readonly text: string;
+  readonly replyToId?: string | undefined;
+  readonly clientNonce?: string | undefined;
 }
 
 @Injectable()
@@ -37,6 +34,9 @@ export class MessageService {
     private readonly prisma: PrismaService,
     private readonly presenter: MessagePresenter,
     private readonly broadcaster: ChatBroadcaster,
+    private readonly directConversations: DirectConversationService,
+    private readonly contactPolicy: ContactPolicyService,
+    private readonly history: MessageHistoryService,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
   ) {}
 
@@ -78,64 +78,74 @@ export class MessageService {
     });
   }
 
-  /**
-   * One page of history, newest first, walking backwards through the
-   * (channelId, createdAt DESC, id DESC) index. Never OFFSET: skipping rows costs more the
-   * deeper you scroll, and a message inserted meanwhile shifts the window.
-   */
-  async history(query: HistoryQuery): Promise<HistoryPage> {
-    const limit = Math.min(query.limit ?? MESSAGE_PAGE_SIZE, 100);
+  async sendDirect(input: SendDirectMessageInput): Promise<MessageWithAuthor> {
+    const conversation = await this.directConversations.participant(
+      input.conversationId,
+      input.authorId,
+    );
+    const target = this.directConversations.otherUser(conversation, input.authorId);
+    await this.contactPolicy.assertAllowed(input.authorId, target.id, "message");
 
-    const cursor =
-      query.before === undefined
-        ? null
-        : await this.prisma.db.message.findUnique({
-            where: { id: query.before },
-            select: { createdAt: true, id: true },
-          });
+    if (input.replyToId !== undefined) {
+      const targetMessage = await this.prisma.db.message.findUnique({
+        where: { id: input.replyToId },
+        select: { directConversationId: true },
+      });
 
-    const messages = await this.prisma.db.message.findMany({
-      where: {
-        channelId: query.channelId,
-        deletedAt: null,
-        ...(cursor
-          ? {
-              OR: [
-                { createdAt: { lt: cursor.createdAt } },
-                { createdAt: cursor.createdAt, id: { lt: cursor.id } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: limit + 1,
-      include: { author: true },
-    });
-
-    const hasMore = messages.length > limit;
-    const page = hasMore ? messages.slice(0, limit) : messages;
-
-    return {
-      messages: page,
-      nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
-    };
-  }
-
-  async byId(messageId: string): Promise<MessageWithAuthor> {
-    const message = await this.prisma.db.message.findUnique({
-      where: { id: messageId },
-      include: { author: true },
-    });
-
-    if (!message || message.deletedAt !== null) {
-      throw new MessageNotFoundError(messageId);
+      if (!targetMessage || targetMessage.directConversationId !== input.conversationId) {
+        throw new ReplyTargetNotInChannelError(input.replyToId);
+      }
     }
 
-    return message;
+    if (input.clientNonce !== undefined) {
+      const existing = await this.prisma.db.message.findFirst({
+        where: {
+          directConversationId: input.conversationId,
+          authorId: input.authorId,
+          clientNonce: input.clientNonce,
+        },
+        include: { author: true },
+      });
+      if (existing) return existing;
+    }
+
+    try {
+      return await this.prisma.db.message.create({
+        data: {
+          id: this.ids.generate(),
+          directConversationId: input.conversationId,
+          authorId: input.authorId,
+          content: Buffer.from(encodeTextContent(input.text)),
+          contentSchema: TEXT_CONTENT_SCHEMA,
+          replyToId: input.replyToId ?? null,
+          clientNonce: input.clientNonce ?? null,
+        },
+        include: { author: true },
+      });
+    } catch (error: unknown) {
+      if (
+        input.clientNonce !== undefined &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        return this.prisma.db.message.findFirstOrThrow({
+          where: {
+            directConversationId: input.conversationId,
+            authorId: input.authorId,
+            clientNonce: input.clientNonce,
+          },
+          include: { author: true },
+        });
+      }
+      throw error;
+    }
   }
 
   async edit(messageId: string, text: string): Promise<MessageWithAuthor> {
-    await this.byId(messageId);
+    const message = await this.history.byId(messageId);
+    if (message.contentSchema.startsWith("system/")) {
+      throw new SystemMessageImmutableError(messageId);
+    }
 
     const updated = await this.prisma.db.message.update({
       where: { id: messageId },
@@ -159,13 +169,23 @@ export class MessageService {
    * order. Removing the row would break both.
    */
   async remove(messageId: string): Promise<void> {
-    const message = await this.byId(messageId);
+    const message = await this.history.byId(messageId);
+    if (message.contentSchema.startsWith("system/")) {
+      throw new SystemMessageImmutableError(messageId);
+    }
 
     await this.prisma.db.message.update({
       where: { id: messageId },
       data: { deletedAt: new Date(), content: Buffer.from(encodeTextContent("")) },
     });
 
-    this.broadcaster.messageDeleted({ channelId: message.channelId, messageId });
+    if (message.channelId !== null) {
+      this.broadcaster.messageDeleted({ channelId: message.channelId, messageId });
+    } else if (message.directConversationId !== null) {
+      this.broadcaster.directMessageDeleted({
+        conversationId: message.directConversationId,
+        messageId,
+      });
+    }
   }
 }

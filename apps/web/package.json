@@ -14,9 +14,11 @@
   "dependencies": {
     "@tanstack/react-query": "^5.87.1",
     "@voreli/shared": "workspace:*",
+    "i18next": "^26.4.2",
     "mediasoup-client": "^3.23.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-i18next": "^17.0.13",
     "socket.io-client": "^4.8.3",
     "zustand": "^5.0.15"
   },
