@@ -212,6 +212,7 @@ export class VoiceMedia {
     try {
       this.producer = await this.transports.send.produce({
         track,
+        appData: { source: "microphone" },
         codecOptions: { ...MICROPHONE_CODEC_OPTIONS },
         zeroRtpOnPause: true,
         disableTrackOnPause: false,

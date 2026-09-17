@@ -13,6 +13,11 @@ export const VoiceClientEvent = {
   ResumeConsumer: "consumer:resume",
   SetSelfState: "voice:self-state",
   SetModeratorState: "voice:moderator-state",
+  ScreenStart: "voice:screen-start",
+  ScreenStop: "voice:screen-stop",
+  ScreenWatch: "voice:screen-watch",
+  ScreenUnwatch: "voice:screen-unwatch",
+  ScreenLayer: "voice:screen-layer",
   RefreshAuth: "auth:refresh",
 } as const;
 
@@ -23,14 +28,21 @@ export const VoiceServerEvent = {
   ProducerNew: "voice:producer-new",
   ProducerClosed: "voice:producer-closed",
   Speaking: "voice:speaking",
+  ScreenStarted: "voice:screen-started",
+  ScreenUpdated: "voice:screen-updated",
+  ScreenStopped: "voice:screen-stopped",
   Error: "voice:error",
 } as const;
 
 export type TransportDirection = "send" | "recv";
 
+export type VoiceMediaSource = "microphone" | "screen-video" | "screen-audio";
+
 export interface VoiceProducerView {
   readonly producerId: string;
   readonly kind: types.MediaKind;
+  readonly source: VoiceMediaSource;
+  readonly screenStreamId: string | null;
 }
 
 export interface VoiceParticipantView {
@@ -91,6 +103,8 @@ export interface CreateProducerPayload {
   readonly transportId: string;
   readonly kind: types.MediaKind;
   readonly rtpParameters: types.RtpParameters;
+  readonly source: VoiceMediaSource;
+  readonly screenStreamId?: string;
 }
 
 export interface CreateProducerResponse {
@@ -148,6 +162,45 @@ export interface VoiceProducerClosedEvent {
 
 export interface VoiceSpeakingEvent {
   readonly speaking: readonly { readonly userId: string; readonly level: number }[];
+}
+
+export interface ScreenShareView {
+  readonly id: string;
+  readonly mediaRoomId: string;
+  readonly userId: string;
+  readonly videoProducerId: string;
+  readonly audioProducerId: string | null;
+}
+
+export interface StartScreenSharePayload {
+  readonly mediaRoomId: string;
+  readonly videoProducerId: string;
+  readonly audioProducerId?: string;
+}
+
+export interface ScreenSharePayload {
+  readonly mediaRoomId: string;
+  readonly screenStreamId: string;
+}
+
+export interface ScreenShareLayerPayload extends ScreenSharePayload {
+  readonly spatialLayer: 0 | 1 | 2;
+}
+
+export interface ScreenShareResponse {
+  readonly screenShare: ScreenShareView;
+}
+
+export interface ScreenShareProducersResponse {
+  readonly producers: readonly VoiceProducerView[];
+}
+
+export interface ScreenShareEvent {
+  readonly screenShare: ScreenShareView;
+}
+
+export interface ScreenShareStoppedEvent extends ScreenSharePayload {
+  readonly reason: "stopped" | "track-ended" | "left" | "permission-revoked" | "failed";
 }
 
 export interface VoiceErrorEvent {

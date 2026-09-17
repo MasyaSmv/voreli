@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { TransportDirection } from "@voreli/shared";
+import type { TransportDirection, VoiceMediaSource } from "@voreli/shared";
 import type { types } from "mediasoup";
 
 import type { EnvironmentVariables } from "../../config/env.validation.js";
@@ -43,6 +43,8 @@ interface RoomProducer {
 export interface SessionProducerView {
   readonly producerId: string;
   readonly kind: types.MediaKind;
+  readonly source: VoiceMediaSource;
+  readonly screenStreamId: string | null;
 }
 
 type TransportFailureHandler = (sessionId: string) => Promise<void> | void;
@@ -158,6 +160,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     kind: types.MediaKind,
     rtpParameters: types.RtpParameters,
     paused: boolean,
+    source: VoiceMediaSource,
+    screenStreamId: string | null,
   ): Promise<types.Producer> {
     const session = this.session(sessionId);
     const transport = this.ownedTransport(sessionId, transportId);
@@ -166,11 +170,16 @@ export class MediaSessionRegistry implements OnModuleDestroy {
       throw new VoiceInvalidTransportDirectionError();
     }
 
-    if (session.producers.size >= 1 || kind !== "audio") {
+    if (session.producers.size >= 1 || kind !== "audio" || source !== "microphone") {
       throw new VoiceMediaObjectLimitError("producer");
     }
 
-    const producer = await transport.transport.produce({ kind, rtpParameters, paused });
+    const producer = await transport.transport.produce({
+      kind,
+      rtpParameters,
+      paused,
+      appData: { source, screenStreamId },
+    });
     session.producers.set(producer.id, producer);
     this.producers.set(producer.id, { channelId: session.channelId, sessionId, producer });
 
@@ -249,6 +258,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     return [...this.session(sessionId).producers.values()].map((producer) => ({
       producerId: producer.id,
       kind: producer.kind,
+      source: producer.appData["source"] as VoiceMediaSource,
+      screenStreamId: (producer.appData["screenStreamId"] as string | null) ?? null,
     }));
   }
 
@@ -270,6 +281,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     const producers = [...session.producers.values()].map((producer) => ({
       producerId: producer.id,
       kind: producer.kind,
+      source: producer.appData["source"] as VoiceMediaSource,
+      screenStreamId: (producer.appData["screenStreamId"] as string | null) ?? null,
     }));
 
     for (const transport of session.transports.values()) {

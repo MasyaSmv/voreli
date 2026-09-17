@@ -88,7 +88,12 @@ export function bindVoiceServerEvents(
   });
 
   signaling.on<VoiceProducerEvent>(VoiceServerEvent.ProducerNew, (event) => {
-    state.addProducer(event.userId, { producerId: event.producerId, kind: event.kind });
+    state.addProducer(event.userId, {
+      producerId: event.producerId,
+      kind: event.kind,
+      source: event.source,
+      screenStreamId: event.screenStreamId,
+    });
     void media
       .consumeRemote(event.userId, event.producerId)
       .catch((error: unknown) => state.failed(error));

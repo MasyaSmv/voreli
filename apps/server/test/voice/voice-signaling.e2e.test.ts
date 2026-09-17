@@ -116,6 +116,7 @@ describe("voice signaling", () => {
       transportId: bobSend.id,
       kind: "audio",
       rtpParameters: rtpParameters(bobJoin.rtpCapabilities),
+      source: "microphone",
     })) as Ack<unknown>;
     expect(forbidden).toMatchObject({ ok: false, errorCode: "VOICE_SPEAK_FORBIDDEN" });
 
@@ -125,11 +126,14 @@ describe("voice signaling", () => {
         transportId: aliceSend.id,
         kind: "audio",
         rtpParameters: rtpParameters(aliceJoin.rtpCapabilities),
+        source: "microphone",
       }),
     );
     await expect(producerEvent).resolves.toMatchObject({
       userId: alice.id,
       producerId: produced.producerId,
+      source: "microphone",
+      screenStreamId: null,
     });
 
     const wrongDirection = (await bobSocket.emitWithAck(VoiceClientEvent.CreateConsumer, {

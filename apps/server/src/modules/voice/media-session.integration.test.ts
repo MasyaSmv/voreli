@@ -56,7 +56,15 @@ describe("media session ownership", () => {
     expect(send.closed).toBe(false);
     send.emit("icestatechange", "connected");
     await expect(
-      registry.createProducer("session-one", recv.id, "audio", rtpParameters(handle.router), false),
+      registry.createProducer(
+        "session-one",
+        recv.id,
+        "audio",
+        rtpParameters(handle.router),
+        false,
+        "microphone",
+        null,
+      ),
     ).rejects.toBeInstanceOf(VoiceInvalidTransportDirectionError);
 
     registry.closeSession("session-one");
@@ -80,6 +88,8 @@ describe("media session ownership", () => {
       "audio",
       rtpParameters(firstHandle.router),
       false,
+      "microphone",
+      null,
     );
     const consumer = await registry.createConsumer(
       "consumer-session",
@@ -126,6 +136,8 @@ describe("media session ownership", () => {
       "audio",
       rtpParameters(sourceHandle.router),
       false,
+      "microphone",
+      null,
     );
 
     await expect(

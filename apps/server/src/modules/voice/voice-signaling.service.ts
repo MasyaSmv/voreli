@@ -93,6 +93,8 @@ export class VoiceSignalingService {
       payload.kind,
       payload.rtpParameters,
       participant.selfMuted || participant.moderatorMuted,
+      payload.source,
+      payload.screenStreamId ?? null,
     );
 
     await this.speaking.addProducer(channelId, userId, producer);
@@ -104,6 +106,8 @@ export class VoiceSignalingService {
       userId,
       producerId: producer.id,
       kind: producer.kind,
+      source: payload.source,
+      screenStreamId: payload.screenStreamId ?? null,
     });
 
     return { producerId: producer.id };

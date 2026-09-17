@@ -19,6 +19,36 @@ export const VOICE_MEDIA_CODECS: readonly types.RouterRtpCodecCapability[] = [
       stereo: 0,
     },
   },
+  {
+    kind: "video",
+    mimeType: "video/VP8",
+    clockRate: 90_000,
+    parameters: {},
+    rtcpFeedback: [
+      { type: "nack" },
+      { type: "nack", parameter: "pli" },
+      { type: "ccm", parameter: "fir" },
+      { type: "goog-remb" },
+      { type: "transport-cc" },
+    ],
+  },
+  {
+    kind: "video",
+    mimeType: "video/H264",
+    clockRate: 90_000,
+    parameters: {
+      "packetization-mode": 1,
+      "level-asymmetry-allowed": 1,
+      "profile-level-id": "42e01f",
+    },
+    rtcpFeedback: [
+      { type: "nack" },
+      { type: "nack", parameter: "pli" },
+      { type: "ccm", parameter: "fir" },
+      { type: "goog-remb" },
+      { type: "transport-cc" },
+    ],
+  },
 ];
 
 @Injectable()

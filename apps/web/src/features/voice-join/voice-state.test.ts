@@ -10,7 +10,9 @@ const alice: VoiceParticipantView = {
   selfDeafened: false,
   moderatorMuted: false,
   moderatorDeafened: false,
-  producers: [{ producerId: "producer-alice", kind: "audio" }],
+  producers: [
+    { producerId: "producer-alice", kind: "audio", source: "microphone", screenStreamId: null },
+  ],
 };
 
 const bob: VoiceParticipantView = {
@@ -71,18 +73,27 @@ describe("VoiceSessionState", () => {
   it("adds a producer once, however often the event arrives", () => {
     state.joined("channel-one", "session-one", [bob]);
 
-    state.addProducer(bob.userId, { producerId: "producer-bob", kind: "audio" });
-    state.addProducer(bob.userId, { producerId: "producer-bob", kind: "audio" });
+    const producer = {
+      producerId: "producer-bob",
+      kind: "audio" as const,
+      source: "microphone" as const,
+      screenStreamId: null,
+    };
+    state.addProducer(bob.userId, producer);
+    state.addProducer(bob.userId, producer);
 
-    expect(state.participant(bob.userId)?.producers).toEqual([
-      { producerId: "producer-bob", kind: "audio" },
-    ]);
+    expect(state.participant(bob.userId)?.producers).toEqual([producer]);
   });
 
   it("ignores a producer for someone who is not in the room", () => {
     state.joined("channel-one", "session-one", [bob]);
 
-    state.addProducer("user-ghost", { producerId: "producer-ghost", kind: "audio" });
+    state.addProducer("user-ghost", {
+      producerId: "producer-ghost",
+      kind: "audio",
+      source: "microphone",
+      screenStreamId: null,
+    });
 
     expect(useVoice.getState().participants).toEqual([bob]);
   });

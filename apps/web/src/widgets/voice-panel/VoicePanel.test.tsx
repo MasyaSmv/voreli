@@ -57,7 +57,14 @@ describe("VoicePanel", () => {
           selfDeafened: false,
           moderatorMuted: false,
           moderatorDeafened: false,
-          producers: [{ producerId: "producer-two", kind: "audio" }],
+          producers: [
+            {
+              producerId: "producer-two",
+              kind: "audio",
+              source: "microphone",
+              screenStreamId: null,
+            },
+          ],
         },
       ],
       speakingUserIds: new Set(["user-two"]),

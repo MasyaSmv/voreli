@@ -81,6 +81,14 @@ export class CreateProducerDto implements CreateProducerPayload {
 
   @IsObject()
   rtpParameters!: CreateProducerPayload["rtpParameters"];
+
+  @IsIn(["microphone", "screen-video", "screen-audio"])
+  source!: CreateProducerPayload["source"];
+
+  @IsOptional()
+  @IsString()
+  @Length(1, ID_MAX_LENGTH)
+  screenStreamId?: string;
 }
 
 export class CreateConsumerDto implements CreateConsumerPayload {
