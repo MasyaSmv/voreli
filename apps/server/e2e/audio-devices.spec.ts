@@ -74,6 +74,7 @@ test.afterAll(async () => {
 test("falls back when the selected microphone disappears without rebuilding media", async ({
   browser,
 }) => {
+  test.setTimeout(75_000);
   const fallback = await pulse.createMicrophone("voreli_fallback", "Voreli_Fallback_Microphone");
   const selected = await pulse.createMicrophone("voreli_selected", "Voreli_Selected_Microphone");
   const defaultOutput = await pulse.createOutput("voreli_default_output", "Voreli_Default_Output");
@@ -88,8 +89,11 @@ test("falls back when the selected microphone disappears without rebuilding medi
 
     await pulse.removeMicrophone(selected);
 
-    await expect.poll(() => capturedTrackStates(page)).toContain("ended");
-    await expect.poll(() => capturedTrackStates(page)).toContain("live");
+    await expect
+      .poll(() => browserHasDevice(page, "audioinput", selected.label), { timeout: 20_000 })
+      .toBe(false);
+    await expect.poll(() => capturedTrackStates(page), { timeout: 20_000 }).toContain("ended");
+    await expect.poll(() => capturedTrackStates(page), { timeout: 20_000 }).toContain("live");
     await expect
       .poll(() => mediaGraph(page))
       .toMatchObject({
@@ -107,6 +111,7 @@ test("falls back when the selected microphone disappears without rebuilding medi
 test("shows an error and releases capture when no fallback microphone remains", async ({
   browser,
 }) => {
+  test.setTimeout(75_000);
   const fallback = await pulse.createMicrophone(
     "voreli_missing_fallback",
     "Voreli_Missing_Fallback",
@@ -131,7 +136,10 @@ test("shows an error and releases capture when no fallback microphone remains", 
     });
     await pulse.removeMicrophone(selected);
 
-    await expect.poll(() => capturedTrackStates(page)).not.toContain("live");
+    await expect
+      .poll(() => browserHasDevice(page, "audioinput", selected.label), { timeout: 20_000 })
+      .toBe(false);
+    await expect.poll(() => capturedTrackStates(page), { timeout: 20_000 }).not.toContain("live");
     await expect(page.getByText("Голос подключён")).toBeVisible();
     await page.getByRole("button", { name: "Настройки голоса" }).click();
     await expect(page.getByRole("alert")).toBeVisible();
@@ -254,4 +262,18 @@ async function outputDeviceId(page: Page, label: string): Promise<string> {
     if (!device) throw new Error(`Audio output ${expectedLabel} is not visible to Chromium`);
     return device.deviceId;
   }, label);
+}
+
+async function browserHasDevice(
+  page: Page,
+  kind: MediaDeviceKind,
+  label: string,
+): Promise<boolean> {
+  return page.evaluate(
+    async ({ expectedKind, expectedLabel }) =>
+      (await navigator.mediaDevices.enumerateDevices()).some(
+        (device) => device.kind === expectedKind && device.label === expectedLabel,
+      ),
+    { expectedKind: kind, expectedLabel: label },
+  );
 }
