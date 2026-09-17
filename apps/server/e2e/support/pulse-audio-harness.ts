@@ -73,6 +73,17 @@ export class PulseAudioHarness {
     await execFileAsync("pactl", ["set-default-sink", output.sinkName]);
   }
 
+  async stopServer(): Promise<void> {
+    await execFileAsync("pulseaudio", ["--kill"]);
+    this.moduleIds.length = 0;
+    await this.waitForServer(false);
+  }
+
+  async startServer(): Promise<void> {
+    await execFileAsync("pulseaudio", ["--start", "--exit-idle-time=-1"]);
+    await this.waitForServer(true);
+  }
+
   async removeMicrophone(microphone: VirtualMicrophone): Promise<void> {
     const modules = this.microphoneModules.get(microphone);
     if (!modules) throw new Error("Microphone modules are not owned");
@@ -161,6 +172,18 @@ export class PulseAudioHarness {
     throw new Error(
       `PulseAudio ${kind} ${name} did not become ${shouldExist ? "ready" : "absent"}`,
     );
+  }
+
+  private async waitForServer(shouldBeReady: boolean): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    do {
+      const ready = await execFileAsync("pactl", ["info"])
+        .then(() => true)
+        .catch(() => false);
+      if (ready === shouldBeReady) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    throw new Error(`PulseAudio server did not become ${shouldBeReady ? "ready" : "unavailable"}`);
   }
 
   private async sineSample(durationMs: number): Promise<string> {

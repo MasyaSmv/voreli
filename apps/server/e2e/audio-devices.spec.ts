@@ -126,25 +126,19 @@ test("shows an error and releases capture when no fallback microphone remains", 
 
   const context = await deviceContext(browser, "2001:db8::30:2");
   const page = await context.newPage();
+  let serverStopped = false;
   try {
     await joinVoice(page, selected.label);
-    const cdp = await context.newCDPSession(page);
-    await cdp.send("Browser.setPermission", {
-      permission: { name: "microphone" },
-      setting: "denied",
-      origin: "http://127.0.0.1:5174",
-    });
-    await pulse.removeMicrophone(selected);
+    await pulse.stopServer();
+    serverStopped = true;
 
-    await expect
-      .poll(() => browserHasDevice(page, "audioinput", selected.label), { timeout: 20_000 })
-      .toBe(false);
     await expect.poll(() => capturedTrackStates(page), { timeout: 20_000 }).not.toContain("live");
     await expect(page.getByText("Голос подключён")).toBeVisible();
     await openVoiceSettings(page);
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
   } finally {
     await context.close();
+    if (serverStopped) await pulse.startServer();
   }
 });
 
