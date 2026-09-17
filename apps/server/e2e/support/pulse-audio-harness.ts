@@ -79,11 +79,6 @@ export class PulseAudioHarness {
     await this.waitForServer(false);
   }
 
-  async startServer(): Promise<void> {
-    await execFileAsync("pulseaudio", ["--start", "--exit-idle-time=-1"]);
-    await this.waitForServer(true);
-  }
-
   async removeMicrophone(microphone: VirtualMicrophone): Promise<void> {
     const modules = this.microphoneModules.get(microphone);
     if (!modules) throw new Error("Microphone modules are not owned");

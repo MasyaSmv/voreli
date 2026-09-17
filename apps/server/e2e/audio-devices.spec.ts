@@ -108,40 +108,6 @@ test("falls back when the selected microphone disappears without rebuilding medi
   }
 });
 
-test("shows an error and releases capture when no fallback microphone remains", async ({
-  browser,
-}) => {
-  test.setTimeout(75_000);
-  const fallback = await pulse.createMicrophone(
-    "voreli_missing_fallback",
-    "Voreli_Missing_Fallback",
-  );
-  const selected = await pulse.createMicrophone(
-    "voreli_missing_selected",
-    "Voreli_Missing_Selected",
-  );
-  const defaultOutput = await pulse.createOutput("voreli_failure_output", "Voreli_Failure_Output");
-  await pulse.setDefaultMicrophone(fallback);
-  await pulse.setDefaultOutput(defaultOutput);
-
-  const context = await deviceContext(browser, "2001:db8::30:2");
-  const page = await context.newPage();
-  let serverStopped = false;
-  try {
-    await joinVoice(page, selected.label);
-    await pulse.stopServer();
-    serverStopped = true;
-
-    await expect.poll(() => capturedTrackStates(page), { timeout: 20_000 }).not.toContain("live");
-    await expect(page.getByText("Голос подключён")).toBeVisible();
-    await openVoiceSettings(page);
-    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
-  } finally {
-    await context.close();
-    if (serverStopped) await pulse.startServer();
-  }
-});
-
 test("routes SFU echo to the selected PulseAudio sink", async ({ browser }) => {
   test.setTimeout(60_000);
   const microphone = await pulse.createMicrophone("voreli_routing", "Voreli_Routing_Microphone");
@@ -172,6 +138,39 @@ test("routes SFU echo to the selected PulseAudio sink", async ({ browser }) => {
     });
 
     expect(peak).toBeGreaterThan(500);
+  } finally {
+    await context.close();
+  }
+});
+
+// Killing PulseAudio invalidates Chromium's process-wide audio service. Keep this destructive
+// case last: a new browser context cannot repair that external process after the daemon restarts.
+test("shows an error and releases capture when no fallback microphone remains", async ({
+  browser,
+}) => {
+  test.setTimeout(75_000);
+  const fallback = await pulse.createMicrophone(
+    "voreli_missing_fallback",
+    "Voreli_Missing_Fallback",
+  );
+  const selected = await pulse.createMicrophone(
+    "voreli_missing_selected",
+    "Voreli_Missing_Selected",
+  );
+  const defaultOutput = await pulse.createOutput("voreli_failure_output", "Voreli_Failure_Output");
+  await pulse.setDefaultMicrophone(fallback);
+  await pulse.setDefaultOutput(defaultOutput);
+
+  const context = await deviceContext(browser, "2001:db8::30:2");
+  const page = await context.newPage();
+  try {
+    await joinVoice(page, selected.label);
+    await pulse.stopServer();
+
+    await expect.poll(() => capturedTrackStates(page), { timeout: 20_000 }).not.toContain("live");
+    await expect(page.getByText("Голос подключён")).toBeVisible();
+    await openVoiceSettings(page);
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
   } finally {
     await context.close();
   }
