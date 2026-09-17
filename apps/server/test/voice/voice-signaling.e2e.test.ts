@@ -66,6 +66,14 @@ describe("voice signaling", () => {
     await harness.close();
   });
 
+  it("acknowledges a payload with the wrong runtime type", async () => {
+    const socket = await connect(await login(alice));
+
+    await expect(
+      socket.emitWithAck(VoiceClientEvent.Join, { channelId: false }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "INVALID_PAYLOAD" });
+  });
+
   it("routes a producer through owned transports and enforces Speak", async () => {
     await request(harness.app.getHttpServer())
       .put(`/channels/${channelId}/overrides`)

@@ -8,11 +8,13 @@ import {
   type OnGatewayInit,
   SubscribeMessage,
 } from "@nestjs/websockets";
-import { type Ack, ClientEvent, type RefreshAuthPayload } from "@voreli/shared";
+import { type Ack, ClientEvent } from "@voreli/shared";
 import type { DefaultEventsMap, Namespace, Socket } from "socket.io";
 
 import { type DomainEventBus, type DomainEventMap } from "../../common/events/domain-event-bus.js";
 import { DomainError } from "../../common/errors/domain-error.js";
+import { validateSocketPayload } from "../../common/validation/validate-socket-payload.js";
+import { RefreshAuthDto } from "./dto/refresh-auth.dto.js";
 import { SocketAuthenticationService } from "./socket-authentication.service.js";
 import type { SocketIdentity } from "./socket-identity.service.js";
 import { sessionRoomOf } from "./socket-session.registry.js";
@@ -103,11 +105,12 @@ export abstract class AuthenticatedGateway
   @SubscribeMessage(ClientEvent.RefreshAuth)
   async refreshAuth(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: RefreshAuthPayload,
+    @MessageBody() payload: unknown,
     @AckDecorator() acknowledge: AckCallback<{ userId: string }> | undefined,
   ): Promise<void> {
     const response = await this.guarded(socket, async (currentIdentity) => {
-      if (!(await this.authentication.refresh(socket, payload.accessToken))) {
+      const command = validateSocketPayload(RefreshAuthDto, payload);
+      if (!(await this.authentication.refresh(socket, command.accessToken))) {
         return {
           ok: false as const,
           errorCode: "UNAUTHENTICATED",

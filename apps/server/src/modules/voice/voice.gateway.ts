@@ -8,20 +8,13 @@ import {
 } from "@nestjs/websockets";
 import {
   type Ack,
-  type ConnectTransportPayload,
-  type CreateConsumerPayload,
   type CreateConsumerResponse,
-  type CreateProducerPayload,
   type CreateProducerResponse,
-  type CreateTransportPayload,
   type CreateTransportResponse,
-  type RestartIcePayload,
   type RestartIceResponse,
-  type ResumeConsumerPayload,
   type VoiceParticipantUpdatedEvent,
   VOICE_NAMESPACE,
   VoiceClientEvent,
-  type VoiceJoinPayload,
   type VoiceJoinResponse,
 } from "@voreli/shared";
 import type { Namespace } from "socket.io";
@@ -41,6 +34,15 @@ import { VoiceSocketMembershipService } from "./voice-socket-membership.service.
 import { VoiceParticipantControlService } from "./voice-participant-control.service.js";
 import { validateSocketPayload } from "../../common/validation/validate-socket-payload.js";
 import { SetVoiceModeratorStateDto, SetVoiceSelfStateDto } from "./dto/voice-control.dto.js";
+import {
+  ConnectTransportDto,
+  CreateConsumerDto,
+  CreateProducerDto,
+  CreateTransportDto,
+  RestartIceDto,
+  ResumeConsumerDto,
+  VoiceJoinDto,
+} from "./dto/voice-signaling.dto.js";
 import { VOICE_STATE_REPOSITORY, type VoiceStateRepository } from "./voice-state.repository.js";
 
 @WebSocketGateway({ namespace: VOICE_NAMESPACE })
@@ -111,16 +113,20 @@ export class VoiceGateway extends AuthenticatedGateway {
   @WsRateLimit({ limit: 5, windowMs: 5_000 })
   async join(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: VoiceJoinPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<VoiceJoinResponse>> {
     return this.guarded(socket, async (identity) => {
-      const mediaRoomId = "mediaRoomId" in payload ? payload.mediaRoomId : payload.channelId;
+      const command = validateSocketPayload(VoiceJoinDto, payload);
+      const mediaRoomId = command.mediaRoomId ?? command.channelId;
+      if (mediaRoomId === undefined) {
+        throw new Error("Validated voice join command has no room identifier");
+      }
       const response = await this.rooms.join(
         identity.user.id,
         identity.sessionId,
         socket.id,
         mediaRoomId,
-        payload.sessionId,
+        command.sessionId,
       );
       await this.membership.move(socket, mediaRoomId);
       return { ok: true as const, data: response };
@@ -139,21 +145,29 @@ export class VoiceGateway extends AuthenticatedGateway {
   @SubscribeMessage(VoiceClientEvent.CreateTransport)
   async createTransport(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: CreateTransportPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<CreateTransportResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createTransport(identity.user.id, identity.sessionId, payload),
+      data: await this.signaling.createTransport(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(CreateTransportDto, payload),
+      ),
     }));
   }
 
   @SubscribeMessage(VoiceClientEvent.ConnectTransport)
   async connectTransport(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: ConnectTransportPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.connectTransport(identity.user.id, identity.sessionId, payload);
+      await this.signaling.connectTransport(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(ConnectTransportDto, payload),
+      );
       return { ok: true as const, data: null };
     });
   }
@@ -161,43 +175,59 @@ export class VoiceGateway extends AuthenticatedGateway {
   @SubscribeMessage(VoiceClientEvent.RestartIce)
   async restartIce(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: RestartIcePayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<RestartIceResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.restartIce(identity.user.id, identity.sessionId, payload),
+      data: await this.signaling.restartIce(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(RestartIceDto, payload),
+      ),
     }));
   }
 
   @SubscribeMessage(VoiceClientEvent.CreateProducer)
   async createProducer(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: CreateProducerPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<CreateProducerResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createProducer(identity.user.id, identity.sessionId, payload),
+      data: await this.signaling.createProducer(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(CreateProducerDto, payload),
+      ),
     }));
   }
 
   @SubscribeMessage(VoiceClientEvent.CreateConsumer)
   async createConsumer(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: CreateConsumerPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<CreateConsumerResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true as const,
-      data: await this.signaling.createConsumer(identity.user.id, identity.sessionId, payload),
+      data: await this.signaling.createConsumer(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(CreateConsumerDto, payload),
+      ),
     }));
   }
 
   @SubscribeMessage(VoiceClientEvent.ResumeConsumer)
   async resumeConsumer(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: ResumeConsumerPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<null>> {
     return this.guarded(socket, async (identity) => {
-      await this.signaling.resumeConsumer(identity.user.id, identity.sessionId, payload);
+      await this.signaling.resumeConsumer(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(ResumeConsumerDto, payload),
+      );
       return { ok: true as const, data: null };
     });
   }

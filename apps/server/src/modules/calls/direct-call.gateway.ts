@@ -11,9 +11,6 @@ import {
   type AcceptCallResponse,
   CALL_NAMESPACE,
   CallClientEvent,
-  type CallConnectionQualityEvent,
-  type CallIdPayload,
-  type StartCallPayload,
   type StartCallResponse,
   type SyncCallResponse,
 } from "@voreli/shared";
@@ -22,6 +19,7 @@ import type { Namespace } from "socket.io";
 import { DOMAIN_EVENT_BUS, type DomainEventBus } from "../../common/events/domain-event-bus.js";
 import { WsRateLimit } from "../../common/rate-limit/ws-rate-limit.decorator.js";
 import { WsRateLimitInterceptor } from "../../common/rate-limit/ws-rate-limit.interceptor.js";
+import { validateSocketPayload } from "../../common/validation/validate-socket-payload.js";
 import {
   AuthenticatedGateway,
   type AuthenticatedSocket,
@@ -29,6 +27,7 @@ import {
 import { SocketAuthenticationService } from "../realtime/socket-authentication.service.js";
 import { DirectCallBroadcaster } from "./direct-call-broadcaster.js";
 import { DirectCallService } from "./direct-call.service.js";
+import { CallConnectionQualityDto, CallIdDto, StartCallDto } from "./dto/direct-call-socket.dto.js";
 
 @WebSocketGateway({ namespace: CALL_NAMESPACE })
 @UseInterceptors(WsRateLimitInterceptor)
@@ -54,12 +53,16 @@ export class DirectCallGateway extends AuthenticatedGateway {
   @WsRateLimit({ limit: 5, windowMs: 10_000 })
   async start(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: StartCallPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<StartCallResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true,
       data: {
-        call: await this.calls.start(identity.user.id, identity.sessionId, payload),
+        call: await this.calls.start(
+          identity.user.id,
+          identity.sessionId,
+          validateSocketPayload(StartCallDto, payload),
+        ),
       },
     }));
   }
@@ -67,54 +70,77 @@ export class DirectCallGateway extends AuthenticatedGateway {
   @SubscribeMessage(CallClientEvent.Accept)
   async accept(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: CallIdPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<AcceptCallResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true,
-      data: await this.calls.accept(payload.callId, identity.user.id, identity.sessionId),
+      data: await this.calls.accept(
+        validateSocketPayload(CallIdDto, payload).callId,
+        identity.user.id,
+        identity.sessionId,
+      ),
     }));
   }
 
   @SubscribeMessage(CallClientEvent.Decline)
   async decline(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: CallIdPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<StartCallResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true,
-      data: { call: await this.calls.decline(payload.callId, identity.user.id) },
+      data: {
+        call: await this.calls.decline(
+          validateSocketPayload(CallIdDto, payload).callId,
+          identity.user.id,
+        ),
+      },
     }));
   }
 
   @SubscribeMessage(CallClientEvent.Cancel)
   async cancel(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: CallIdPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<StartCallResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true,
-      data: { call: await this.calls.cancel(payload.callId, identity.user.id) },
+      data: {
+        call: await this.calls.cancel(
+          validateSocketPayload(CallIdDto, payload).callId,
+          identity.user.id,
+        ),
+      },
     }));
   }
 
   @SubscribeMessage(CallClientEvent.Hangup)
   async hangup(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: CallIdPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<StartCallResponse>> {
     return this.guarded(socket, async (identity) => ({
       ok: true,
-      data: { call: await this.calls.hangup(payload.callId, identity.user.id) },
+      data: {
+        call: await this.calls.hangup(
+          validateSocketPayload(CallIdDto, payload).callId,
+          identity.user.id,
+        ),
+      },
     }));
   }
 
   @SubscribeMessage(CallClientEvent.ReportQuality)
   async reportQuality(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: CallConnectionQualityEvent,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<null>> {
     return this.guarded(socket, (identity) => {
-      this.calls.reportQuality(identity.user.id, identity.sessionId, payload);
+      this.calls.reportQuality(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(CallConnectionQualityDto, payload),
+      );
       return Promise.resolve({ ok: true, data: null });
     });
   }
