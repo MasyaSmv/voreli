@@ -88,7 +88,6 @@ test("falls back when the selected microphone disappears without rebuilding medi
 
     await pulse.removeMicrophone(selected);
 
-    await expect(page.getByRole("combobox", { name: /Микрофон/ })).toHaveValue("");
     await expect.poll(() => capturedTrackStates(page)).toContain("ended");
     await expect.poll(() => capturedTrackStates(page)).toContain("live");
     await expect
@@ -98,6 +97,8 @@ test("falls back when the selected microphone disappears without rebuilding medi
         audioSenders: before.audioSenders,
       });
     await expect(page.getByText("Голос подключён")).toBeVisible();
+    await page.getByRole("button", { name: "Настройки голоса" }).click();
+    await expect(page.getByRole("combobox", { name: /Микрофон/ })).toHaveValue("");
   } finally {
     await context.close();
   }
@@ -130,9 +131,10 @@ test("shows an error and releases capture when no fallback microphone remains", 
     });
     await pulse.removeMicrophone(selected);
 
-    await expect(page.getByRole("alert")).toBeVisible();
     await expect.poll(() => capturedTrackStates(page)).not.toContain("live");
     await expect(page.getByText("Голос подключён")).toBeVisible();
+    await page.getByRole("button", { name: "Настройки голоса" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
   } finally {
     await context.close();
   }
