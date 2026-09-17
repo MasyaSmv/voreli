@@ -15,6 +15,10 @@ import { InvalidPayloadError } from "../errors/invalid-payload.error.js";
  * that quietly became a boolean is exactly the coercion this is here to reject.
  */
 export function validateSocketPayload<T extends object>(type: new () => T, payload: unknown): T {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new InvalidPayloadError(["payload"]);
+  }
+
   const instance = plainToInstance(type, payload, { enableImplicitConversion: false });
   const errors = validateSync(instance, { whitelist: true, forbidUnknownValues: true });
 

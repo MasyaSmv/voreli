@@ -4,6 +4,7 @@ import {
   SetVoiceModeratorStateDto,
   SetVoiceSelfStateDto,
 } from "../../modules/voice/dto/voice-control.dto.js";
+import { VoiceJoinDto } from "../../modules/voice/dto/voice-signaling.dto.js";
 import { InvalidPayloadError } from "../errors/invalid-payload.error.js";
 import { validateSocketPayload } from "./validate-socket-payload.js";
 
@@ -54,5 +55,34 @@ describe("validateSocketPayload", () => {
     expect(() => validateSocketPayload(SetVoiceSelfStateDto, { selfMuted: true })).toThrow(
       InvalidPayloadError,
     );
+  });
+
+  it.each([null, undefined, false, "payload", 42, []])(
+    "refuses a non-object payload: %j",
+    (payload) => {
+      expect(() => validateSocketPayload(SetVoiceSelfStateDto, payload)).toThrow(
+        InvalidPayloadError,
+      );
+    },
+  );
+
+  it("requires exactly one room identifier for a voice join", () => {
+    expect(() => validateSocketPayload(VoiceJoinDto, {})).toThrow(InvalidPayloadError);
+    expect(() =>
+      validateSocketPayload(VoiceJoinDto, { channelId: "channel", mediaRoomId: "call" }),
+    ).toThrow(InvalidPayloadError);
+    expect(validateSocketPayload(VoiceJoinDto, { mediaRoomId: "call" })).toMatchObject({
+      mediaRoomId: "call",
+    });
+  });
+
+  it("removes unknown fields for forward compatibility", () => {
+    const validated = validateSocketPayload(SetVoiceSelfStateDto, {
+      selfMuted: false,
+      selfDeafened: false,
+      fieldFromNewerClient: true,
+    });
+
+    expect(validated).toEqual({ selfMuted: false, selfDeafened: false });
   });
 });

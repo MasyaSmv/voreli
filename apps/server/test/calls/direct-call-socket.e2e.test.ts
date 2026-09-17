@@ -60,6 +60,18 @@ describe("direct call socket signaling", () => {
     await harness.close();
   });
 
+  it("acknowledges a payload with the wrong runtime type", async () => {
+    const socket = connect(aliceToken, CALL_NAMESPACE);
+    await connected(socket);
+
+    await expect(
+      socket.emitWithAck(CallClientEvent.Start, {
+        conversationId: 42,
+        clientNonce: "invalid-call",
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "INVALID_PAYLOAD" });
+  });
+
   it("rings every callee session and lets exactly one device accept", async () => {
     const aliceSocket = connect(aliceToken, CALL_NAMESPACE);
     const bobFirstSocket = connect(bobFirstToken, CALL_NAMESPACE);

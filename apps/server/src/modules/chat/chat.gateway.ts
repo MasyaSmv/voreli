@@ -6,24 +6,13 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from "@nestjs/websockets";
-import {
-  type Ack,
-  CHAT_NAMESPACE,
-  ClientEvent,
-  type DirectConversationPayload,
-  type DirectMarkReadPayload,
-  type DirectSendMessagePayload,
-  type MarkReadPayload,
-  type MessageView,
-  type SendMessagePayload,
-  type SubscribePayload,
-  type TypingPayload,
-} from "@voreli/shared";
+import { type Ack, CHAT_NAMESPACE, ClientEvent, type MessageView } from "@voreli/shared";
 import type { Namespace } from "socket.io";
 
 import { DOMAIN_EVENT_BUS, type DomainEventBus } from "../../common/events/domain-event-bus.js";
 import { WsRateLimit } from "../../common/rate-limit/ws-rate-limit.decorator.js";
 import { WsRateLimitInterceptor } from "../../common/rate-limit/ws-rate-limit.interceptor.js";
+import { validateSocketPayload } from "../../common/validation/validate-socket-payload.js";
 import {
   AuthenticatedGateway,
   type AuthenticatedSocket,
@@ -34,6 +23,14 @@ import { ChatBroadcaster } from "./chat-broadcaster.js";
 import { ChatRoomAccessService } from "./chat-room-access.service.js";
 import { DirectChatHandlers } from "./direct-chat-handlers.js";
 import { DirectChatRoomAccessService } from "./direct-chat-room-access.service.js";
+import {
+  ChannelPayloadDto,
+  DirectConversationDto,
+  DirectMarkReadDto,
+  DirectSendMessageDto,
+  MarkReadDto,
+  SendMessageDto,
+} from "./dto/chat-socket.dto.js";
 
 @WebSocketGateway({ namespace: CHAT_NAMESPACE })
 @UseInterceptors(WsRateLimitInterceptor)
@@ -63,84 +60,108 @@ export class ChatGateway extends AuthenticatedGateway {
   @SubscribeMessage(ClientEvent.Subscribe)
   subscribe(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: SubscribePayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<{ channelId: string }>> {
-    return this.guarded(socket, (identity) => this.channels.subscribe(socket, identity, payload));
+    return this.guarded(socket, (identity) =>
+      this.channels.subscribe(socket, identity, validateSocketPayload(ChannelPayloadDto, payload)),
+    );
   }
 
   @SubscribeMessage(ClientEvent.Unsubscribe)
   unsubscribe(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: SubscribePayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<{ channelId: string }>> {
-    return this.channels.unsubscribe(socket, payload);
+    return this.guarded(socket, () =>
+      this.channels.unsubscribe(socket, validateSocketPayload(ChannelPayloadDto, payload)),
+    );
   }
 
   @SubscribeMessage(ClientEvent.SendMessage)
   @WsRateLimit({ limit: 10, windowMs: 5_000 })
   sendMessage(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: SendMessagePayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<{ message: MessageView }>> {
-    return this.guarded(socket, (identity) => this.channels.send(identity, payload));
+    return this.guarded(socket, (identity) =>
+      this.channels.send(identity, validateSocketPayload(SendMessageDto, payload)),
+    );
   }
 
   @SubscribeMessage(ClientEvent.TypingStart)
   @WsRateLimit({ limit: 20, windowMs: 5_000 })
   typing(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: TypingPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<null>> {
-    return this.guarded(socket, (identity) => this.channels.typing(socket, identity, payload));
+    return this.guarded(socket, (identity) =>
+      this.channels.typing(socket, identity, validateSocketPayload(ChannelPayloadDto, payload)),
+    );
   }
 
   @SubscribeMessage(ClientEvent.MarkRead)
   markRead(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: MarkReadPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<null>> {
-    return this.guarded(socket, (identity) => this.channels.markRead(identity, payload));
+    return this.guarded(socket, (identity) =>
+      this.channels.markRead(identity, validateSocketPayload(MarkReadDto, payload)),
+    );
   }
 
   @SubscribeMessage(ClientEvent.DirectSubscribe)
   directSubscribe(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: DirectConversationPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<{ conversationId: string }>> {
-    return this.guarded(socket, (identity) => this.directs.subscribe(socket, identity, payload));
+    return this.guarded(socket, (identity) =>
+      this.directs.subscribe(
+        socket,
+        identity,
+        validateSocketPayload(DirectConversationDto, payload),
+      ),
+    );
   }
 
   @SubscribeMessage(ClientEvent.DirectUnsubscribe)
   directUnsubscribe(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: DirectConversationPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<{ conversationId: string }>> {
-    return this.directs.unsubscribe(socket, payload);
+    return this.guarded(socket, () =>
+      this.directs.unsubscribe(socket, validateSocketPayload(DirectConversationDto, payload)),
+    );
   }
 
   @SubscribeMessage(ClientEvent.DirectSendMessage)
   @WsRateLimit({ limit: 10, windowMs: 5_000 })
   directSendMessage(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: DirectSendMessagePayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<{ message: MessageView }>> {
-    return this.guarded(socket, (identity) => this.directs.send(identity, payload));
+    return this.guarded(socket, (identity) =>
+      this.directs.send(identity, validateSocketPayload(DirectSendMessageDto, payload)),
+    );
   }
 
   @SubscribeMessage(ClientEvent.DirectTypingStart)
   @WsRateLimit({ limit: 20, windowMs: 5_000 })
   directTyping(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: DirectConversationPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<null>> {
-    return this.guarded(socket, (identity) => this.directs.typing(socket, identity, payload));
+    return this.guarded(socket, (identity) =>
+      this.directs.typing(socket, identity, validateSocketPayload(DirectConversationDto, payload)),
+    );
   }
 
   @SubscribeMessage(ClientEvent.DirectMarkRead)
   directMarkRead(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() payload: DirectMarkReadPayload,
+    @MessageBody() payload: unknown,
   ): Promise<Ack<null>> {
-    return this.guarded(socket, (identity) => this.directs.markRead(identity, payload));
+    return this.guarded(socket, (identity) =>
+      this.directs.markRead(identity, validateSocketPayload(DirectMarkReadDto, payload)),
+    );
   }
 }

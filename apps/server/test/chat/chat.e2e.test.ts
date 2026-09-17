@@ -191,6 +191,19 @@ describe("realtime chat", () => {
     expect(socket.connected).toBe(false);
   });
 
+  it("acknowledges invalid chat and refresh payloads without calling domain services", async () => {
+    const socket = connect(aliceToken);
+    await connected(socket);
+
+    await expect(
+      socket.emitWithAck(ClientEvent.SendMessage, { channelId, text: false }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "INVALID_PAYLOAD" });
+    await expect(
+      socket.emitWithAck(ClientEvent.RefreshAuth, { accessToken: 42 }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "INVALID_PAYLOAD" });
+    expect(socket.connected).toBe(true);
+  });
+
   it("moves the socket to the rotated session while keeping the same user connected", async () => {
     const session = request.agent(harness.app.getHttpServer());
     const loggedIn = await session
