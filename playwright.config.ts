@@ -29,6 +29,9 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:5174",
     permissions: ["microphone"],
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+    trace: "on-first-retry",
     launchOptions: {
       args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
     },

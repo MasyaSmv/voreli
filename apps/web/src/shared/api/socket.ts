@@ -1,4 +1,11 @@
-import { CHAT_NAMESPACE, ClientEvent, VOICE_NAMESPACE, VoiceClientEvent } from "@voreli/shared";
+import {
+  CALL_NAMESPACE,
+  CallClientEvent,
+  CHAT_NAMESPACE,
+  ClientEvent,
+  VOICE_NAMESPACE,
+  VoiceClientEvent,
+} from "@voreli/shared";
 import { io, type Socket } from "socket.io-client";
 
 import { serverUrl } from "../config/env";
@@ -6,6 +13,7 @@ import { getAccessToken, observeAccessToken } from "./http";
 
 let chat: Socket | null = null;
 let voice: Socket | null = null;
+let call: Socket | null = null;
 
 observeAccessToken((token) => {
   if (token !== null && chat?.connected === true) {
@@ -13,6 +21,9 @@ observeAccessToken((token) => {
   }
   if (token !== null && voice?.connected === true) {
     voice.emit(VoiceClientEvent.RefreshAuth, { accessToken: token });
+  }
+  if (token !== null && call?.connected === true) {
+    call.emit(CallClientEvent.RefreshAuth, { accessToken: token });
   }
 });
 
@@ -38,6 +49,11 @@ export function voiceSocket(): Socket {
   return voice;
 }
 
+export function callSocket(): Socket {
+  if (call === null) call = createSocket(CALL_NAMESPACE);
+  return call;
+}
+
 function createSocket(namespace: string): Socket {
   return io(`${serverUrl()}${namespace}`, {
     autoConnect: false,
@@ -51,6 +67,8 @@ function createSocket(namespace: string): Socket {
 export function disconnectSocket(): void {
   chat?.disconnect();
   voice?.disconnect();
+  call?.disconnect();
   chat = null;
   voice = null;
+  call = null;
 }

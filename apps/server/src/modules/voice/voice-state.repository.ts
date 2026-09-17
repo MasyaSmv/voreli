@@ -2,6 +2,7 @@ export const VOICE_STATE_REPOSITORY = Symbol("VOICE_STATE_REPOSITORY");
 
 export interface VoiceParticipantState {
   readonly userId: string;
+  readonly authenticationSessionId: string;
   readonly sessionId: string;
   readonly generation: number;
   readonly socketId: string | null;
@@ -21,10 +22,12 @@ export interface VoiceRoomMeta {
 export interface VoiceJoinInput {
   readonly channelId: string;
   readonly userId: string;
+  readonly authenticationSessionId: string;
   readonly socketId: string;
   readonly newSessionId: string;
   readonly resumeSessionId?: string;
   readonly now: string;
+  readonly maxParticipants?: number;
 }
 
 export type VoiceJoinResult =

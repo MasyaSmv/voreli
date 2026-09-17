@@ -1,4 +1,4 @@
-import { VoiceClientEvent, type VoiceJoinResponse } from "@voreli/shared";
+import { callIdFromMediaRoom, VoiceClientEvent, type VoiceJoinResponse } from "@voreli/shared";
 
 import { sessionUserId } from "./voice-identity";
 import type { VoiceMedia } from "./voice-media";
@@ -28,7 +28,11 @@ export class VoiceConnection {
    * The microphone arrives as a promise because it is requested before the join round trip,
    * so the permission prompt and the server's work overlap.
    */
-  async join(channelId: string, microphone: Promise<MediaStream>): Promise<void> {
+  async join(
+    channelId: string,
+    microphone: Promise<MediaStream>,
+    target: "channel" | "media-room" = "channel",
+  ): Promise<void> {
     if (this.state.channelId === channelId && this.state.isConnected) {
       (await microphone).getTracks().forEach((track) => track.stop());
       return;
@@ -48,9 +52,10 @@ export class VoiceConnection {
         this.closeMedia();
       }
 
-      const joined = await this.signaling.request<VoiceJoinResponse>(VoiceClientEvent.Join, {
-        channelId,
-      });
+      const joined = await this.signaling.request<VoiceJoinResponse>(
+        VoiceClientEvent.Join,
+        target === "channel" ? { channelId } : { mediaRoomId: channelId },
+      );
       joinedServer = true;
       this.state.joined(channelId, joined.sessionId, joined.participants);
 
@@ -71,10 +76,12 @@ export class VoiceConnection {
     const { channelId, sessionId } = this.state;
     if (channelId === null || sessionId === null) return;
 
-    const joined = await this.signaling.request<VoiceJoinResponse>(VoiceClientEvent.Join, {
-      channelId,
-      sessionId,
-    });
+    const joined = await this.signaling.request<VoiceJoinResponse>(
+      VoiceClientEvent.Join,
+      callIdFromMediaRoom(channelId) !== null
+        ? { mediaRoomId: channelId, sessionId }
+        : { channelId, sessionId },
+    );
     this.state.resumed(joined.sessionId, joined.participants);
 
     if (!joined.resumed) {

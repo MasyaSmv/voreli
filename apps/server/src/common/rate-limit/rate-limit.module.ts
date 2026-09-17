@@ -22,6 +22,7 @@ export const RATE_LIMITS = {
   login: { limit: 10, ttl: 15 * 60_000 },
   register: { limit: 5, ttl: 15 * 60_000 },
   invite: { limit: 10, ttl: 60_000 },
+  userLookup: { limit: 20, ttl: 60_000 },
 } as const;
 
 @Module({

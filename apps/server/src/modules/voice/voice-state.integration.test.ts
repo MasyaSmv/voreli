@@ -148,6 +148,7 @@ describe("Redis voice state", () => {
         repository.join({
           channelId: "full-channel",
           userId: `user-${String(index)}`,
+          authenticationSessionId: `auth-session-${String(index)}`,
           socketId: `socket-${String(index)}`,
           newSessionId: `session-${String(index)}`,
           now: now(),
@@ -159,6 +160,7 @@ describe("Redis voice state", () => {
       repository.join({
         channelId: "full-channel",
         userId: "overflow-user",
+        authenticationSessionId: "overflow-auth-session",
         socketId: "overflow-socket",
         newSessionId: "overflow-session",
         now: now(),
@@ -181,7 +183,12 @@ describe("Redis voice state", () => {
     newSessionId: string;
     resumeSessionId?: string;
   }) {
-    return repository.join({ ...input, userId: "user", now: now() });
+    return repository.join({
+      ...input,
+      userId: "user",
+      authenticationSessionId: "auth-session",
+      now: now(),
+    });
   }
 });
 

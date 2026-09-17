@@ -1,5 +1,4 @@
-/** Root-mean-square level above which the local microphone counts as speech. */
-const SPEAKING_RMS_THRESHOLD = 0.025;
+import { SpeakingDetector } from "./speaking-detector";
 
 /** 512 samples at 48 kHz is ~10 ms of audio: short enough to react within one frame. */
 const FFT_SIZE = 512;
@@ -17,6 +16,7 @@ const FFT_SIZE = 512;
 export class MicrophoneMeter {
   private source: MediaStreamAudioSourceNode | undefined;
   private frame: number | undefined;
+  private readonly detector = new SpeakingDetector();
 
   start(
     context: AudioContext,
@@ -31,16 +31,16 @@ export class MicrophoneMeter {
     this.source.connect(analyser);
 
     const samples = new Float32Array(analyser.fftSize);
-    let speaking = false;
+    this.detector.reset();
 
     const measure = (): void => {
       analyser.getFloatTimeDomainData(samples);
       const rms = Math.sqrt(
         samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length,
       );
-      const next = isEnabled() && rms > SPEAKING_RMS_THRESHOLD;
+      const speaking = this.detector.speaking;
+      const next = this.detector.sample(rms, isEnabled(), performance.now());
       if (next !== speaking) {
-        speaking = next;
         onChange(next);
       }
       this.frame = requestAnimationFrame(measure);
@@ -54,5 +54,10 @@ export class MicrophoneMeter {
     this.frame = undefined;
     this.source?.disconnect();
     this.source = undefined;
+    this.detector.reset();
+  }
+
+  reset(): void {
+    this.detector.reset();
   }
 }

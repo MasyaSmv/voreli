@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { User } from "@prisma/client";
 
+import { normalizeUsername } from "../../common/identity/username.js";
 import { ID_GENERATOR, type IdGenerator } from "../../common/services/id-generator.js";
 import { PASSWORD_HASHER, type PasswordHasher } from "../../common/services/password-hasher.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
@@ -31,7 +32,7 @@ export class RegistrationService {
   ) {}
 
   async register(input: RegistrationInput): Promise<User> {
-    const username = input.username.toLowerCase();
+    const username = normalizeUsername(input.username);
 
     // Checked before hashing: argon2 is deliberately slow, and there is no reason to spend
     // that on a request already doomed by a taken name.
@@ -47,6 +48,7 @@ export class RegistrationService {
           username,
           displayName: input.displayName?.trim() || input.username,
           passwordHash,
+          contactSettings: { create: {} },
         },
       });
 

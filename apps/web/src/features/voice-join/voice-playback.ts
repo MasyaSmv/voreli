@@ -36,6 +36,14 @@ export class VoicePlayback {
     }
   }
 
+  setJitterBufferTarget(targetMs: number | null): void {
+    for (const { consumer } of this.received.values()) {
+      const receiver = consumer.rtpReceiver as
+        (RTCRtpReceiver & { jitterBufferTarget?: number | null }) | undefined;
+      if (receiver && "jitterBufferTarget" in receiver) receiver.jitterBufferTarget = targetMs;
+    }
+  }
+
   /**
    * Plays each element and yields its consumer id, then waits for the caller to tell the
    * server before moving on.

@@ -6,6 +6,20 @@ export interface DomainEventMap {
   readonly "channel.overrides.changed": { readonly channelId: string };
   readonly "member.removed": { readonly serverId: string; readonly userId: string };
   readonly "member.joined": { readonly serverId: string; readonly userId: string };
+  readonly "relationship.changed": {
+    readonly userId: string;
+    readonly targetUserId: string;
+  };
+  readonly "contact.policy.changed": { readonly userId: string };
+  readonly "media.participant.left": { readonly mediaRoomId: string; readonly userId: string };
+  readonly "media.participant.reconnecting": {
+    readonly mediaRoomId: string;
+    readonly userId: string;
+    readonly reconnecting: boolean;
+  };
+  readonly "call.terminal": { readonly mediaRoomId: string };
+  readonly "call.reconcile": { readonly activeMediaRoomIds: readonly string[] };
+  readonly "media.call.empty": { readonly mediaRoomId: string };
 }
 
 export type DomainEventName = keyof DomainEventMap;

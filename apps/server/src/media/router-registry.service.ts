@@ -68,6 +68,10 @@ export class RouterRegistryService implements OnModuleDestroy {
     return entry ? { router: entry.router, webRtcServer: entry.webRtcServer } : undefined;
   }
 
+  participantCount(channelId: string): number {
+    return this.entries.get(channelId)?.participants ?? 0;
+  }
+
   onModuleDestroy(): void {
     for (const [channelId, entry] of this.entries) {
       if (entry.idleTimer) {

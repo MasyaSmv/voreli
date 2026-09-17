@@ -61,9 +61,15 @@ describe("VoicePanel", () => {
 
     render(<VoicePanel channel={channel} />);
 
-    expect(screen.getByText("Вы · микрофон выключен")).toBeInTheDocument();
+    expect(screen.getByText("Вы")).toBeInTheDocument();
+    expect(screen.getByText("Микрофон выключен")).toBeInTheDocument();
     expect(screen.getByText("Участник user-t")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Включить микрофон" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Включить микрофон" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Выйти из голосового канала" })).toBeEnabled();
     expect(screen.getByText("Голос подключён")).toBeInTheDocument();
   });
 });

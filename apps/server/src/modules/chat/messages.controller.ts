@@ -30,10 +30,12 @@ import {
 } from "../permissions/permission-resolver.contract.js";
 import { EditMessageDto, HistoryQueryDto } from "./dto/message.dto.js";
 import { MessagePresenter } from "./message-presenter.js";
+import { MessageHistoryService } from "./message-history.service.js";
 import { MessageService } from "./message.service.js";
 import { NotMessageAuthorError } from "./errors/chat-errors.js";
 import { UnreadService } from "./unread.service.js";
 import { ResourceNotVisibleError } from "../permissions/errors/permission-errors.js";
+import { DirectConversationService } from "../relationships/direct-conversation.service.js";
 
 /**
  * History and message edits over plain HTTP. Realtime delivery is the gateway's job; this
@@ -44,8 +46,10 @@ import { ResourceNotVisibleError } from "../permissions/errors/permission-errors
 export class MessagesController {
   constructor(
     private readonly messages: MessageService,
+    private readonly historyReader: MessageHistoryService,
     private readonly unread: UnreadService,
     private readonly presenter: MessagePresenter,
+    private readonly directConversations: DirectConversationService,
     @Inject(PERMISSION_RESOLVER) private readonly permissions: PermissionResolverContract,
   ) {}
 
@@ -56,7 +60,7 @@ export class MessagesController {
     @Param("channelId") channelId: string,
     @Query() query: HistoryQueryDto,
   ): Promise<MessagePage> {
-    const page = await this.messages.history({
+    const page = await this.historyReader.history({
       channelId,
       before: query.before,
       limit: query.limit,
@@ -103,7 +107,14 @@ export class MessagesController {
    * permission is verified outside PermissionGuard, and it is confined to two routes.
    */
   private async assertMayModify(messageId: string, userId: string): Promise<void> {
-    const message = await this.messages.byId(messageId);
+    const message = await this.historyReader.byId(messageId);
+    if (message.directConversationId !== null) {
+      await this.directConversations.participant(message.directConversationId, userId);
+      if (message.authorId !== userId) throw new NotMessageAuthorError(messageId);
+      return;
+    }
+
+    if (message.channelId === null) throw new ResourceNotVisibleError("Message", messageId);
     const resolved = await this.permissions.forChannel(userId, message.channelId);
 
     if (!resolved || !hasPermission(resolved.channelPermissions, Permission.ViewChannel)) {

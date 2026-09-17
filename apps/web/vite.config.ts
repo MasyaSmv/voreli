@@ -38,6 +38,12 @@ export default defineConfig(({ mode }) => {
         "/members": { target: proxyTarget, changeOrigin: true },
         "/messages": { target: proxyTarget, changeOrigin: true },
         "/invites": { target: proxyTarget, changeOrigin: true },
+        "/users": { target: proxyTarget, changeOrigin: true },
+        "/relationships": { target: proxyTarget, changeOrigin: true },
+        "/friend-requests": { target: proxyTarget, changeOrigin: true },
+        "/friends": { target: proxyTarget, changeOrigin: true },
+        "/blocks": { target: proxyTarget, changeOrigin: true },
+        "/direct-conversations": { target: proxyTarget, changeOrigin: true },
         // Socket.IO's transport path, not the namespace: the namespace ("/chat") travels
         // inside the handshake, while every connection is made to /socket.io/.
         "/socket.io": { target: proxyTarget, changeOrigin: true, ws: true },

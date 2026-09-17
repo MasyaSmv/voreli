@@ -1,4 +1,5 @@
 import { MicrophoneMeter } from "./microphone-meter";
+import { RemoteSpeakingHold } from "./remote-speaking-hold";
 import type { OwnUserId } from "./voice-identity";
 import type { VoiceSessionState } from "./voice-state";
 
@@ -11,9 +12,11 @@ import type { VoiceSessionState } from "./voice-state";
  */
 export class VoiceSpeakingMonitor {
   private remoteUserIds: ReadonlySet<string> = new Set();
+  private remoteExpiryTimer: number | undefined;
   private localSpeaking = false;
   private audioContext: AudioContext | undefined;
   private readonly meter = new MicrophoneMeter();
+  private readonly remoteHold = new RemoteSpeakingHold();
 
   constructor(
     private readonly state: VoiceSessionState,
@@ -33,7 +36,9 @@ export class VoiceSpeakingMonitor {
   }
 
   setRemote(userIds: readonly string[]): void {
-    this.remoteUserIds = new Set(userIds);
+    const now = Date.now();
+    this.remoteUserIds = this.remoteHold.report(userIds, now);
+    this.scheduleRemoteExpiry(now);
     this.publish();
   }
 
@@ -47,14 +52,38 @@ export class VoiceSpeakingMonitor {
 
   /** Muting has to silence your own bubble at once; the meter would only notice on decay. */
   muteLocal(): void {
+    this.meter.reset();
     this.localSpeaking = false;
     this.publish();
   }
 
   stopMetering(): void {
     this.meter.stop();
+    if (this.remoteExpiryTimer !== undefined) window.clearTimeout(this.remoteExpiryTimer);
+    this.remoteExpiryTimer = undefined;
+    this.remoteHold.clear();
     this.remoteUserIds = new Set();
     this.localSpeaking = false;
+  }
+
+  private scheduleRemoteExpiry(now: number): void {
+    if (this.remoteExpiryTimer !== undefined) window.clearTimeout(this.remoteExpiryTimer);
+    const expiry = this.remoteHold.nextExpiry();
+    if (expiry === null) {
+      this.remoteExpiryTimer = undefined;
+
+      return;
+    }
+
+    this.remoteExpiryTimer = window.setTimeout(
+      () => {
+        const current = Date.now();
+        this.remoteUserIds = this.remoteHold.expire(current);
+        this.publish();
+        this.scheduleRemoteExpiry(current);
+      },
+      Math.max(1, expiry - now),
+    );
   }
 
   private publish(): void {

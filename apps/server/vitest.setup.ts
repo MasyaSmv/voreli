@@ -19,3 +19,5 @@ process.env["NODE_ENV"] = "test";
 // A real mediasoup worker is booted by every application harness. One is enough to test
 // the media contracts and keeps the sequential suite from paying for every host CPU.
 process.env["MEDIASOUP_MAX_WORKERS"] = "1";
+// Exercise lazy socket-session checks without making the realtime suite sleep for a minute.
+process.env["SOCKET_REVALIDATE_INTERVAL"] = "1";

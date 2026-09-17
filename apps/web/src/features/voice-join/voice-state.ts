@@ -1,6 +1,7 @@
 import type { VoiceParticipantView, VoiceProducerView } from "@voreli/shared";
 
 import { useVoice } from "../../entities/voice/voice.store";
+import { i18n } from "../../shared/i18n/i18n";
 
 /**
  * The only place that writes the voice store, and the only truth about whether a session is
@@ -83,7 +84,7 @@ export class VoiceSessionState {
 
   failed(error: unknown): void {
     useVoice.getState().replace({
-      error: error instanceof Error ? error.message : "Ошибка голосового соединения",
+      error: error instanceof Error ? error.message : i18n.t("voice.errors.connection"),
     });
   }
 
