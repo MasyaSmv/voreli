@@ -130,7 +130,7 @@ test("shows an error and releases capture when no fallback microphone remains", 
     await joinVoice(page, selected.label);
     const cdp = await context.newCDPSession(page);
     await cdp.send("Browser.setPermission", {
-      permission: { name: "audioCapture" },
+      permission: { name: "microphone" },
       setting: "denied",
       origin: "http://127.0.0.1:5174",
     });
