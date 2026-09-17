@@ -78,6 +78,6 @@ jobs:
           pulseaudio --start --exit-idle-time=-1
           pactl info
 
-      - run: pnpm e2e:devices
+      - run: xvfb-run --auto-servernum pnpm e2e:devices
         env:
           VORELI_REQUIRE_PULSE_AUDIO: "1"

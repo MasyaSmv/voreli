@@ -47,6 +47,7 @@ export default defineConfig({
       name: "devices",
       testMatch: /audio-devices\.spec\.ts/,
       use: {
+        headless: false,
         launchOptions: {
           args: ["--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required"],
         },
