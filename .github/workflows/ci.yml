@@ -69,3 +69,15 @@ jobs:
       - run: pnpm build
 
       - run: pnpm verify
+
+      - name: Install Chromium and PulseAudio device harness
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install --yes pulseaudio pulseaudio-utils
+          pulseaudio --start --exit-idle-time=-1
+          pactl info
+
+      - run: xvfb-run --auto-servernum pnpm e2e:devices
+        env:
+          VORELI_REQUIRE_PULSE_AUDIO: "1"

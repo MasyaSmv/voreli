@@ -14,6 +14,7 @@
     "test": "turbo run test",
     "verify": "pnpm format:check && turbo run lint typecheck test",
     "e2e": "playwright test",
+    "e2e:devices": "playwright test --project=devices",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @voreli/server db:migrate",

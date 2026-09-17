@@ -32,10 +32,28 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     trace: "on-first-retry",
-    launchOptions: {
-      args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
-    },
   },
+  projects: [
+    {
+      name: "browser",
+      testIgnore: /audio-devices\.spec\.ts/,
+      use: {
+        launchOptions: {
+          args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+        },
+      },
+    },
+    {
+      name: "devices",
+      testMatch: /audio-devices\.spec\.ts/,
+      use: {
+        headless: false,
+        launchOptions: {
+          args: ["--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required"],
+        },
+      },
+    },
+  ],
   webServer: [
     {
       command:
