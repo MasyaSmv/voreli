@@ -11,6 +11,7 @@ import { VoiceRoomService } from "./voice-room.service.js";
 import { VoiceSignalingService } from "./voice-signaling.service.js";
 import { VoiceSocketMembershipService } from "./voice-socket-membership.service.js";
 import { VOICE_STATE_REPOSITORY, type VoiceStateRepository } from "./voice-state.repository.js";
+import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
 
 @Injectable()
 export class VoicePermissionRevalidationService implements OnModuleInit, OnModuleDestroy {
@@ -24,6 +25,7 @@ export class VoicePermissionRevalidationService implements OnModuleInit, OnModul
     private readonly rooms: VoiceRoomService,
     private readonly signaling: VoiceSignalingService,
     private readonly membership: VoiceSocketMembershipService,
+    private readonly screenShares: ScreenShareLifecycleService,
   ) {}
 
   onModuleInit(): void {
@@ -66,6 +68,9 @@ export class VoicePermissionRevalidationService implements OnModuleInit, OnModul
 
     if (!(await this.access.canSpeak(userId, channelId))) {
       await this.signaling.closeProducersForUser(userId);
+    }
+    if (!(await this.access.canShareScreen(userId, channelId))) {
+      this.screenShares.stopForUser(userId, channelId);
     }
   }
 }

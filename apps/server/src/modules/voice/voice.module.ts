@@ -24,6 +24,8 @@ import { VOICE_STATE_REPOSITORY } from "./voice-state.repository.js";
 import { SpeakingService } from "./speaking.service.js";
 import { VoiceModerationPolicy } from "./voice-moderation.policy.js";
 import { VoiceParticipantControlService } from "./voice-participant-control.service.js";
+import { VoiceMediaSessionContextService } from "./voice-media-session-context.service.js";
+import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
 
 @Module({
   imports: [
@@ -51,6 +53,8 @@ import { VoiceParticipantControlService } from "./voice-participant-control.serv
     SpeakingService,
     VoiceModerationPolicy,
     VoiceParticipantControlService,
+    VoiceMediaSessionContextService,
+    ScreenShareLifecycleService,
     RedisVoiceStateRepository,
     { provide: VOICE_STATE_REPOSITORY, useExisting: RedisVoiceStateRepository },
   ],

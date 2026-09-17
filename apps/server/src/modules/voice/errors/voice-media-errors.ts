@@ -57,3 +57,21 @@ export class VoiceSpeakForbiddenError extends DomainError {
     super("Speaking in this voice channel is not allowed");
   }
 }
+
+export class ScreenShareForbiddenError extends DomainError {
+  static readonly CODE = "SCREEN_SHARE_FORBIDDEN";
+  readonly errorCode = ScreenShareForbiddenError.CODE;
+
+  constructor() {
+    super("Sharing a screen in this voice channel is not allowed");
+  }
+}
+
+export class ScreenShareStateError extends DomainError {
+  static readonly CODE = "SCREEN_SHARE_INVALID_STATE";
+  readonly errorCode = ScreenShareStateError.CODE;
+
+  constructor(message = "Screen share is not in the required state") {
+    super(message);
+  }
+}

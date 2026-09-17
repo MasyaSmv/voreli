@@ -14,6 +14,8 @@ import {
   type VoiceProducerEvent,
   type VoiceJoinResponse,
   type VoiceErrorEvent,
+  type ScreenShareEvent,
+  type ScreenShareStoppedEvent,
 } from "@voreli/shared";
 import { io, type Socket } from "socket.io-client";
 import request from "supertest";
@@ -81,7 +83,7 @@ describe("voice signaling", () => {
       .send({
         memberId: bob.memberId,
         allow: "0",
-        deny: serializePermissions(Permission.Speak),
+        deny: serializePermissions(Permission.Speak | Permission.ShareScreen),
       })
       .expect(204);
 
@@ -119,6 +121,15 @@ describe("voice signaling", () => {
       source: "microphone",
     })) as Ack<unknown>;
     expect(forbidden).toMatchObject({ ok: false, errorCode: "VOICE_SPEAK_FORBIDDEN" });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: bobSend.id,
+        kind: "video",
+        rtpParameters: videoRtpParameters(bobJoin.rtpCapabilities),
+        source: "screen-video",
+        screenStreamId: createId(),
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "SCREEN_SHARE_FORBIDDEN" });
 
     const producerEvent = waitFor<VoiceProducerEvent>(bobSocket, VoiceServerEvent.ProducerNew);
     const produced = ok<CreateProducerResponse>(
@@ -135,6 +146,83 @@ describe("voice signaling", () => {
       source: "microphone",
       screenStreamId: null,
     });
+
+    const screenStreamId = createId();
+    let screenAnnouncedAsMicrophone = false;
+    const countUnexpectedProducer = (): void => {
+      screenAnnouncedAsMicrophone = true;
+    };
+    bobSocket.once(VoiceServerEvent.ProducerNew, countUnexpectedProducer);
+    const screenProducer = ok<CreateProducerResponse>(
+      await aliceSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: aliceSend.id,
+        kind: "video",
+        rtpParameters: videoRtpParameters(aliceJoin.rtpCapabilities),
+        source: "screen-video",
+        screenStreamId,
+      }),
+    );
+    const screenStarted = waitFor<ScreenShareEvent>(bobSocket, VoiceServerEvent.ScreenStarted);
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.ScreenStart, {
+        mediaRoomId: channelId,
+        videoProducerId: screenProducer.producerId,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { screenShare: { id: screenStreamId, videoProducerId: screenProducer.producerId } },
+    });
+    await expect(screenStarted).resolves.toMatchObject({
+      screenShare: { id: screenStreamId, userId: alice.id },
+    });
+    expect(screenAnnouncedAsMicrophone).toBe(false);
+
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.CreateConsumer, {
+        transportId: bobRecv.id,
+        producerId: screenProducer.producerId,
+        rtpCapabilities: bobJoin.rtpCapabilities,
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "VOICE_CANNOT_CONSUME" });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ScreenWatch, {
+        mediaRoomId: channelId,
+        screenStreamId,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { producers: [{ producerId: screenProducer.producerId, source: "screen-video" }] },
+    });
+    const screenConsumer = ok<CreateConsumerResponse>(
+      await bobSocket.emitWithAck(VoiceClientEvent.CreateConsumer, {
+        transportId: bobRecv.id,
+        producerId: screenProducer.producerId,
+        rtpCapabilities: bobJoin.rtpCapabilities,
+      }),
+    );
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ScreenUnwatch, {
+        mediaRoomId: channelId,
+        screenStreamId,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ResumeConsumer, {
+        consumerId: screenConsumer.consumerId,
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "VOICE_MEDIA_OBJECT_NOT_FOUND" });
+
+    const screenStopped = waitFor<ScreenShareStoppedEvent>(
+      bobSocket,
+      VoiceServerEvent.ScreenStopped,
+    );
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.ScreenStop, {
+        mediaRoomId: channelId,
+        screenStreamId,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+    await expect(screenStopped).resolves.toMatchObject({ screenStreamId, reason: "stopped" });
 
     const wrongDirection = (await bobSocket.emitWithAck(VoiceClientEvent.CreateConsumer, {
       transportId: bobSend.id,
@@ -255,5 +343,28 @@ function rtpParameters(
     headerExtensions: [],
     encodings: [{ ssrc: 22_222_222 }],
     rtcp: { cname: "voreli-voice-e2e" },
+  };
+}
+
+function videoRtpParameters(
+  capabilities: VoiceJoinResponse["rtpCapabilities"],
+): CreateProducerPayload["rtpParameters"] {
+  const vp8 = capabilities.codecs?.find((codec) => codec.mimeType.toLowerCase() === "video/vp8");
+  if (!vp8) throw new Error("Voice Router has no VP8 codec");
+
+  return {
+    mid: "screen-video",
+    codecs: [
+      {
+        mimeType: vp8.mimeType,
+        payloadType: vp8.preferredPayloadType,
+        clockRate: vp8.clockRate,
+        parameters: vp8.parameters ?? {},
+        rtcpFeedback: vp8.rtcpFeedback ?? [],
+      },
+    ],
+    headerExtensions: [],
+    encodings: [{ ssrc: 33_333_333 }],
+    rtcp: { cname: "voreli-screen-e2e" },
   };
 }
