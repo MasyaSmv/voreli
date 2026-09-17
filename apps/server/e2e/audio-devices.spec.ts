@@ -101,7 +101,7 @@ test("falls back when the selected microphone disappears without rebuilding medi
         audioSenders: before.audioSenders,
       });
     await expect(page.getByText("Голос подключён")).toBeVisible();
-    await page.getByRole("button", { name: "Настройки голоса" }).click();
+    await openVoiceSettings(page);
     await expect(page.getByRole("combobox", { name: /Микрофон/ })).toHaveValue("");
   } finally {
     await context.close();
@@ -141,7 +141,7 @@ test("shows an error and releases capture when no fallback microphone remains", 
       .toBe(false);
     await expect.poll(() => capturedTrackStates(page), { timeout: 20_000 }).not.toContain("live");
     await expect(page.getByText("Голос подключён")).toBeVisible();
-    await page.getByRole("button", { name: "Настройки голоса" }).click();
+    await openVoiceSettings(page);
     await expect(page.getByRole("alert")).toBeVisible();
   } finally {
     await context.close();
@@ -262,6 +262,14 @@ async function outputDeviceId(page: Page, label: string): Promise<string> {
     if (!device) throw new Error(`Audio output ${expectedLabel} is not visible to Chromium`);
     return device.deviceId;
   }, label);
+}
+
+async function openVoiceSettings(page: Page): Promise<void> {
+  const heading = page.getByRole("heading", { name: "Голос и устройства" });
+  if (!(await heading.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "Настройки голоса" }).click();
+  }
+  await expect(heading).toBeVisible();
 }
 
 async function browserHasDevice(
