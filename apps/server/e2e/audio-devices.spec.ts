@@ -74,9 +74,9 @@ test.afterAll(async () => {
 test("falls back when the selected microphone disappears without rebuilding media", async ({
   browser,
 }) => {
-  const fallback = await pulse.createMicrophone("voreli_fallback", "Voreli Fallback Microphone");
-  const selected = await pulse.createMicrophone("voreli_selected", "Voreli Selected Microphone");
-  const defaultOutput = await pulse.createOutput("voreli_default_output", "Voreli Default Output");
+  const fallback = await pulse.createMicrophone("voreli_fallback", "Voreli_Fallback_Microphone");
+  const selected = await pulse.createMicrophone("voreli_selected", "Voreli_Selected_Microphone");
+  const defaultOutput = await pulse.createOutput("voreli_default_output", "Voreli_Default_Output");
   await pulse.setDefaultMicrophone(fallback);
   await pulse.setDefaultOutput(defaultOutput);
 
@@ -108,13 +108,13 @@ test("shows an error and releases capture when no fallback microphone remains", 
 }) => {
   const fallback = await pulse.createMicrophone(
     "voreli_missing_fallback",
-    "Voreli Missing Fallback",
+    "Voreli_Missing_Fallback",
   );
   const selected = await pulse.createMicrophone(
     "voreli_missing_selected",
-    "Voreli Missing Selected",
+    "Voreli_Missing_Selected",
   );
-  const defaultOutput = await pulse.createOutput("voreli_failure_output", "Voreli Failure Output");
+  const defaultOutput = await pulse.createOutput("voreli_failure_output", "Voreli_Failure_Output");
   await pulse.setDefaultMicrophone(fallback);
   await pulse.setDefaultOutput(defaultOutput);
 
@@ -140,14 +140,14 @@ test("shows an error and releases capture when no fallback microphone remains", 
 
 test("routes SFU echo to the selected PulseAudio sink", async ({ browser }) => {
   test.setTimeout(60_000);
-  const microphone = await pulse.createMicrophone("voreli_routing", "Voreli Routing Microphone");
+  const microphone = await pulse.createMicrophone("voreli_routing", "Voreli_Routing_Microphone");
   const defaultOutput = await pulse.createOutput(
     "voreli_routing_default",
-    "Voreli Routing Default",
+    "Voreli_Routing_Default",
   );
   const selectedOutput = await pulse.createOutput(
     "voreli_routing_selected",
-    "Voreli Routing Selected",
+    "Voreli_Routing_Selected",
   );
   await pulse.setDefaultMicrophone(microphone);
   await pulse.setDefaultOutput(defaultOutput);

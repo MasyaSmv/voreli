@@ -43,7 +43,7 @@ export class PulseAudioHarness {
     const sourceName = `${name}_source`;
     const sinkModuleId = await this.loadModule("module-null-sink", [
       `sink_name=${sinkName}`,
-      `sink_properties=device.description=${label} backing sink`,
+      `sink_properties=device.description=${label}_backing_sink`,
     ]);
     const sourceModuleId = await this.loadModule("module-virtual-source", [
       `source_name=${sourceName}`,
