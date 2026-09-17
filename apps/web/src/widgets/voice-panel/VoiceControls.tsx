@@ -3,29 +3,39 @@ import { useTranslation } from "react-i18next";
 
 import { voiceSession } from "../../features/voice-join/voice-session";
 import { Icon, type IconName } from "../../shared/ui/Icon";
+import { VoiceSettingsPopover } from "./VoiceSettingsPopover";
 
 export function VoiceControls({ own }: { readonly own: VoiceParticipantView | undefined }) {
   const { t } = useTranslation();
+  const effectivelyMuted = (own?.selfMuted ?? false) || (own?.moderatorMuted ?? false);
+  const effectivelyDeafened = (own?.selfDeafened ?? false) || (own?.moderatorDeafened ?? false);
 
   return (
     <footer className="border-t border-line bg-panel/90 px-6 py-3 backdrop-blur">
       <div className="mx-auto flex max-w-4xl items-center justify-center gap-2">
         <ControlButton
           label={own?.selfMuted ? t("voice.enableMicrophone") : t("voice.disableMicrophone")}
-          icon={own?.selfMuted ? "mic-off" : "mic"}
-          active={own?.selfMuted ?? false}
+          icon={effectivelyMuted ? "mic-off" : "mic"}
+          active={effectivelyMuted}
           disabled={!own}
           onClick={() =>
-            void voiceSession.setSelfMuted(!(own?.selfMuted ?? false)).catch(() => undefined)
+            void voiceSession.setSelfMuted(!(own?.selfMuted ?? false)).catch((error: unknown) => {
+              console.error("Failed to update self mute", { error });
+            })
           }
         />
+        <VoiceSettingsPopover />
         <ControlButton
           label={own?.selfDeafened ? t("voice.enableSound") : t("voice.disableSound")}
-          icon={own?.selfDeafened ? "volume-off" : "volume"}
-          active={own?.selfDeafened ?? false}
+          icon={effectivelyDeafened ? "volume-off" : "volume"}
+          active={effectivelyDeafened}
           disabled={!own}
           onClick={() =>
-            void voiceSession.setSelfDeafened(!(own?.selfDeafened ?? false)).catch(() => undefined)
+            void voiceSession
+              .setSelfDeafened(!(own?.selfDeafened ?? false))
+              .catch((error: unknown) => {
+                console.error("Failed to update self deafen", { error });
+              })
           }
         />
         <button

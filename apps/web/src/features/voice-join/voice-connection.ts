@@ -7,6 +7,17 @@ import type { VoiceSpeakingMonitor } from "./voice-speaking-monitor";
 import type { VoiceSessionState } from "./voice-state";
 
 /**
+ * The owner of the microphone track. Capture goes through it and nowhere else: a track taken
+ * straight from `navigator.mediaDevices` would ignore the person's chosen input and, because
+ * the producer is created with `stopTracks: false`, would keep the microphone live after the
+ * session ends with nobody holding a reference to stop it.
+ */
+export interface VoiceInputSource {
+  capture(): Promise<MediaStream>;
+  release(): void;
+}
+
+/**
  * Establishes, re-establishes and tears down the connection to a voice channel.
  *
  * Kept apart from VoiceSession so that the commands the UI issues on a live session — mute,
@@ -22,6 +33,7 @@ export class VoiceConnection {
     private readonly state: VoiceSessionState,
     private readonly media: VoiceMedia,
     private readonly speaking: VoiceSpeakingMonitor,
+    private readonly input: VoiceInputSource,
   ) {}
 
   /**
@@ -33,10 +45,7 @@ export class VoiceConnection {
     microphone: Promise<MediaStream>,
     target: "channel" | "media-room" = "channel",
   ): Promise<void> {
-    if (this.state.channelId === channelId && this.state.isConnected) {
-      (await microphone).getTracks().forEach((track) => track.stop());
-      return;
-    }
+    if (this.state.channelId === channelId && this.state.isConnected) return;
 
     let stream: MediaStream | undefined;
     let joinedServer = false;
@@ -84,10 +93,12 @@ export class VoiceConnection {
     );
     this.state.resumed(joined.sessionId, joined.participants);
 
-    if (!joined.resumed) {
+    if (joined.resumed) {
+      const own = this.state.participant(sessionUserId());
+      if (own) await this.media.setParticipantState(own);
+    } else {
       this.closeMedia();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      await this.buildMedia(joined, stream);
+      await this.buildMedia(joined, await this.input.capture());
     }
   }
 
@@ -97,14 +108,15 @@ export class VoiceConnection {
    */
   shutdown(options: { readonly clearError: boolean } = { clearError: false }): void {
     this.media.close();
+    this.input.release();
     this.speaking.closeAudio();
     this.state.idle(options);
   }
 
   private async buildMedia(joined: VoiceJoinResponse, stream: MediaStream): Promise<void> {
-    const deafened = this.state.participant(sessionUserId())?.selfDeafened ?? false;
-    const track = await this.media.build(joined, stream, deafened);
-    if (track) this.speaking.observeMicrophone(track, () => !this.media.microphonePaused);
+    const own = this.state.participant(sessionUserId());
+    const track = await this.media.build(joined, stream, own);
+    if (track) this.speaking.observeMicrophone(track, () => !this.media.microphoneServerPaused);
   }
 
   private closeMedia(): void {
@@ -129,6 +141,7 @@ export class VoiceConnection {
         },
       ));
     stream?.getTracks().forEach((track) => track.stop());
+    this.input.release();
 
     if (joinedServer && this.signaling.connected) {
       try {

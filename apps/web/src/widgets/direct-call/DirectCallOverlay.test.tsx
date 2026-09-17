@@ -66,6 +66,8 @@ describe("DirectCallOverlay", () => {
           userId: alice.id,
           selfMuted: false,
           selfDeafened: false,
+          moderatorMuted: false,
+          moderatorDeafened: false,
           producers: [],
         },
       ],

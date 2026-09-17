@@ -13,6 +13,15 @@ interface ReceivedAudio {
  */
 export class VoicePlayback {
   private readonly received = new Map<string, ReceivedAudio>();
+  private outputDeviceId: string | null = null;
+
+  get outputSelectionSupported(): boolean {
+    return Boolean(
+      navigator.mediaDevices &&
+      "selectAudioOutput" in navigator.mediaDevices &&
+      "setSinkId" in HTMLMediaElement.prototype,
+    );
+  }
 
   has(producerId: string): boolean {
     return this.received.has(producerId);
@@ -25,6 +34,8 @@ export class VoicePlayback {
     element.srcObject = new MediaStream([consumer.track]);
     document.body.append(element);
     this.received.set(producerId, { consumer, element });
+
+    if (this.outputDeviceId !== null) await element.setSinkId(this.outputDeviceId);
 
     if (!deafened) await element.play();
   }
@@ -42,6 +53,30 @@ export class VoicePlayback {
         (RTCRtpReceiver & { jitterBufferTarget?: number | null }) | undefined;
       if (receiver && "jitterBufferTarget" in receiver) receiver.jitterBufferTarget = targetMs;
     }
+  }
+
+  async chooseOutput(preferredDeviceId: string | null): Promise<string | null> {
+    if (!this.outputSelectionSupported) return null;
+    const devices = navigator.mediaDevices as MediaDevices & {
+      selectAudioOutput(options?: { readonly deviceId?: string }): Promise<MediaDeviceInfo>;
+    };
+    const selected = await devices.selectAudioOutput(
+      preferredDeviceId === null ? undefined : { deviceId: preferredDeviceId },
+    );
+    await Promise.all(
+      [...this.received.values()].map(({ element }) => element.setSinkId(selected.deviceId)),
+    );
+    this.outputDeviceId = selected.deviceId;
+    return selected.deviceId;
+  }
+
+  async useDefaultOutput(): Promise<void> {
+    await Promise.all(
+      [...this.received.values()].map(({ element }) =>
+        "setSinkId" in element ? element.setSinkId("") : Promise.resolve(),
+      ),
+    );
+    this.outputDeviceId = null;
   }
 
   /**

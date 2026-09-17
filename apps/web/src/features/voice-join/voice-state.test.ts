@@ -8,6 +8,8 @@ const alice: VoiceParticipantView = {
   userId: "user-alice",
   selfMuted: false,
   selfDeafened: false,
+  moderatorMuted: false,
+  moderatorDeafened: false,
   producers: [{ producerId: "producer-alice", kind: "audio" }],
 };
 
@@ -15,6 +17,8 @@ const bob: VoiceParticipantView = {
   userId: "user-bob",
   selfMuted: false,
   selfDeafened: false,
+  moderatorMuted: false,
+  moderatorDeafened: false,
   producers: [],
 };
 

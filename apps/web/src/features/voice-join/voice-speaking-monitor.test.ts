@@ -8,6 +8,15 @@ const state = new VoiceSessionState();
 const ownUserId = "user-alice";
 const monitors: VoiceSpeakingMonitor[] = [];
 
+class TestLocalVoiceInputGate {
+  readonly microphoneServerPaused = false;
+  open = false;
+
+  setInputGateOpen(open: boolean): void {
+    this.open = open;
+  }
+}
+
 function speakingUserIds(): readonly string[] {
   return [...useVoice.getState().speakingUserIds].sort();
 }
@@ -61,7 +70,7 @@ describe("VoiceSpeakingMonitor", () => {
 });
 
 function createMonitor(identity: () => string | undefined): VoiceSpeakingMonitor {
-  const monitor = new VoiceSpeakingMonitor(state, identity);
+  const monitor = new VoiceSpeakingMonitor(state, identity, new TestLocalVoiceInputGate());
   monitors.push(monitor);
 
   return monitor;

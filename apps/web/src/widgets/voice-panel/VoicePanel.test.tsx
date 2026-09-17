@@ -1,4 +1,4 @@
-import type { ChannelView, PublicUser } from "@voreli/shared";
+import { Permission, type ChannelView, type PublicUser } from "@voreli/shared";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -47,19 +47,28 @@ describe("VoicePanel", () => {
           userId: user.id,
           selfMuted: true,
           selfDeafened: false,
+          moderatorMuted: false,
+          moderatorDeafened: false,
           producers: [],
         },
         {
           userId: "user-two",
           selfMuted: false,
           selfDeafened: false,
+          moderatorMuted: false,
+          moderatorDeafened: false,
           producers: [{ producerId: "producer-two", kind: "audio" }],
         },
       ],
       speakingUserIds: new Set(["user-two"]),
     });
 
-    render(<VoicePanel channel={channel} />);
+    render(
+      <VoicePanel
+        channel={channel}
+        permissions={(Permission.MuteMembers | Permission.DeafenMembers).toString()}
+      />,
+    );
 
     expect(screen.getByText("Вы")).toBeInTheDocument();
     expect(screen.getByText("Микрофон выключен")).toBeInTheDocument();
@@ -71,5 +80,7 @@ describe("VoicePanel", () => {
     );
     expect(screen.getByRole("button", { name: "Выйти из голосового канала" })).toBeEnabled();
     expect(screen.getByText("Голос подключён")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Заглушить" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Отключить звук" })).toBeEnabled();
   });
 });

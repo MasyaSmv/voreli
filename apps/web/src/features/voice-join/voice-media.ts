@@ -2,6 +2,7 @@ import {
   type CreateConsumerResponse,
   VoiceClientEvent,
   type VoiceJoinResponse,
+  type VoiceParticipantView,
 } from "@voreli/shared";
 import type { types } from "mediasoup-client";
 
@@ -36,6 +37,8 @@ export class VoiceMedia {
   private transports: VoiceTransports | undefined;
   private producer: types.Producer | undefined;
   private deafened = false;
+  private serverPaused = false;
+  private inputGateOpen = false;
   private networkQuality: "good" | "constrained" | "poor" | "unknown" = "unknown";
   private readonly playback = new VoicePlayback();
 
@@ -50,6 +53,14 @@ export class VoiceMedia {
     return this.producer?.paused ?? true;
   }
 
+  get microphoneServerPaused(): boolean {
+    return this.serverPaused;
+  }
+
+  get outputSelectionSupported(): boolean {
+    return this.playback.outputSelectionSupported;
+  }
+
   /**
    * Builds the graph and starts consuming everyone already in the room. Returns the live
    * microphone track, or undefined for a member who may listen but not speak.
@@ -57,9 +68,10 @@ export class VoiceMedia {
   async build(
     joined: VoiceJoinResponse,
     stream: MediaStream,
-    deafened: boolean,
+    own: VoiceParticipantView | undefined,
   ): Promise<MediaStreamTrack | undefined> {
-    this.deafened = deafened;
+    this.serverPaused = own ? own.selfMuted || own.moderatorMuted : false;
+    this.deafened = own ? own.selfDeafened || own.moderatorDeafened : false;
     // Imported on first join rather than at module scope so the SFU client does not weigh
     // down the initial page load for people who never open a voice channel.
     const { Device } = await import("mediasoup-client");
@@ -70,6 +82,7 @@ export class VoiceMedia {
     );
 
     const track = await this.produce(stream);
+    this.applyProducerPause();
     await Promise.all(
       joined.participants.flatMap((participant) =>
         participant.userId === this.ownUserId()
@@ -127,14 +140,33 @@ export class VoiceMedia {
     }
   }
 
+  chooseOutput(preferredDeviceId: string | null): Promise<string | null> {
+    return this.playback.chooseOutput(preferredDeviceId);
+  }
+
+  useDefaultOutput(): Promise<void> {
+    return this.playback.useDefaultOutput();
+  }
+
   async setDeafened(deafened: boolean): Promise<void> {
     this.deafened = deafened;
     await this.playback.setDeafened(deafened);
   }
 
   setMuted(muted: boolean): void {
-    if (muted) this.producer?.pause();
-    else this.producer?.resume();
+    this.serverPaused = muted;
+    this.applyProducerPause();
+  }
+
+  setInputGateOpen(open: boolean): void {
+    this.inputGateOpen = open;
+    this.applyProducerPause();
+  }
+
+  async setParticipantState(participant: VoiceParticipantView): Promise<void> {
+    if (participant.userId !== this.ownUserId()) return;
+    this.setMuted(participant.selfMuted || participant.moderatorMuted);
+    await this.setDeafened(participant.selfDeafened || participant.moderatorDeafened);
   }
 
   observeQuality(
@@ -169,6 +201,8 @@ export class VoiceMedia {
     this.transports = undefined;
     this.device = undefined;
     this.networkQuality = "unknown";
+    this.serverPaused = false;
+    this.inputGateOpen = false;
   }
 
   private async produce(stream: MediaStream): Promise<MediaStreamTrack | undefined> {
@@ -180,6 +214,8 @@ export class VoiceMedia {
         track,
         codecOptions: { ...MICROPHONE_CODEC_OPTIONS },
         zeroRtpOnPause: true,
+        disableTrackOnPause: false,
+        stopTracks: false,
       });
       return track;
     } catch (error: unknown) {
@@ -190,5 +226,16 @@ export class VoiceMedia {
       }
       throw error;
     }
+  }
+
+  async replaceInputTrack(track: MediaStreamTrack): Promise<void> {
+    if (!this.producer) throw new Error(i18n.t("voice.errors.microphoneNotReady"));
+    await this.producer.replaceTrack({ track });
+    this.applyProducerPause();
+  }
+
+  private applyProducerPause(): void {
+    if (this.serverPaused || !this.inputGateOpen) this.producer?.pause();
+    else this.producer?.resume();
   }
 }
