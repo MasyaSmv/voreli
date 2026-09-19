@@ -139,7 +139,8 @@ async function requestAccessTokenRefresh(): Promise<boolean> {
     setAccessToken(payload.accessToken);
 
     return true;
-  } catch {
+  } catch (error: unknown) {
+    console.error("Access-token refresh failed", { error });
     setAccessToken(null);
 
     return false;

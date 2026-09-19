@@ -104,7 +104,9 @@ export class DirectCallSession {
     const call = useDirectCall.getState().call;
     if (!call) return;
     const microphone = voiceSession.captureMicrophone();
-    void microphone.catch(() => undefined);
+    void microphone.catch((error: unknown) => {
+      console.warn("Direct-call microphone capture was refused", { error, callId: call.id });
+    });
     this.preparedMicrophone = microphone;
     try {
       const response = await this.request<AcceptCallResponse>(CallClientEvent.Accept, {
@@ -163,6 +165,11 @@ export class DirectCallSession {
         this.socket?.emit(CallClientEvent.ReportQuality, { callId: call.id, quality });
       });
     } catch (error: unknown) {
+      console.error("Failed to activate direct-call media", {
+        error,
+        callId: call.id,
+        mediaRoomId,
+      });
       useDirectCall.getState().replace({
         error: error instanceof Error ? error.message : "Call media connection failed",
       });
@@ -218,7 +225,10 @@ export class DirectCallSession {
   }
 
   private async stopMicrophone(microphone: Promise<MediaStream>): Promise<void> {
-    await microphone.catch(() => null);
+    await microphone.catch((error: unknown) => {
+      console.warn("Prepared direct-call microphone was unavailable during cleanup", { error });
+      return null;
+    });
     voiceSession.releaseIdleMicrophone();
   }
 

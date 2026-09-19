@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import argon2 from "argon2";
 
 export interface PasswordHasher {
@@ -15,6 +15,7 @@ export const PASSWORD_HASHER = Symbol("PASSWORD_HASHER");
  */
 @Injectable()
 export class Argon2PasswordHasher implements PasswordHasher {
+  private readonly logger = new Logger(Argon2PasswordHasher.name);
   private readonly options = {
     type: argon2.argon2id,
     memoryCost: 19456,
@@ -29,9 +30,14 @@ export class Argon2PasswordHasher implements PasswordHasher {
   async verify(hash: string, plain: string): Promise<boolean> {
     try {
       return await argon2.verify(hash, plain);
-    } catch {
+    } catch (error: unknown) {
       // A malformed hash in the database must read as "wrong password", never as a crash
       // that tells the caller this account is special.
+      this.logger.error({
+        message: "Stored password hash could not be verified",
+        error,
+        operation: "verifyPassword",
+      });
       return false;
     }
   }

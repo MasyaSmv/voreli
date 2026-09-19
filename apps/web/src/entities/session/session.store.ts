@@ -49,7 +49,9 @@ export const useSession = create<SessionState>((set) => {
     },
 
     async logOut() {
-      await apiFetch("/auth/logout", { method: "POST" }).catch(() => undefined);
+      await apiFetch("/auth/logout", { method: "POST" }).catch((error: unknown) => {
+        console.error("Server logout failed; clearing the local session", { error });
+      });
       setAccessToken(null);
       disconnectSocket();
       set({ user: null });
@@ -70,7 +72,8 @@ export const useSession = create<SessionState>((set) => {
         const me = await apiFetch<{ user: PublicUser }>("/auth/me");
         set({ user: me.user, restoring: false });
         chatSocket().connect();
-      } catch {
+      } catch (error: unknown) {
+        console.error("Session profile restore failed", { error });
         set({ user: null, restoring: false });
       }
     },

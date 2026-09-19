@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type {
   ConnectTransportPayload,
   CreateConsumerPayload,
@@ -10,33 +10,26 @@ import type {
   RestartIcePayload,
   RestartIceResponse,
   ResumeConsumerPayload,
+  SetVoiceModeratorStatePayload,
   SetVoiceSelfStatePayload,
   VoiceParticipantView,
 } from "@voreli/shared";
 
-import { VoiceCannotConsumeError, VoiceSpeakForbiddenError } from "./errors/voice-media-errors.js";
+import { VoiceCannotConsumeError } from "./errors/voice-media-errors.js";
 import { MediaSessionRegistry } from "./media-session.registry.js";
-import { SpeakingService } from "./speaking.service.js";
-import { VOICE_STATE_REPOSITORY, type VoiceStateRepository } from "./voice-state.repository.js";
-import { VoiceBroadcaster } from "./voice-broadcaster.js";
-import { MediaRoomAccessService } from "./media-room-access.service.js";
 import { VoiceParticipantControlService } from "./voice-participant-control.service.js";
 import { VoiceMediaSessionContextService } from "./voice-media-session-context.service.js";
-import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
-import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
+import { ScreenShareSignalingService } from "./screen-share-signaling.service.js";
+import { VoiceMicrophoneService } from "./voice-microphone.service.js";
 
 @Injectable()
 export class VoiceSignalingService {
   constructor(
-    @Inject(VOICE_STATE_REPOSITORY) private readonly state: VoiceStateRepository,
     private readonly media: MediaSessionRegistry,
-    private readonly access: MediaRoomAccessService,
-    private readonly speaking: SpeakingService,
-    private readonly broadcaster: VoiceBroadcaster,
     private readonly controls: VoiceParticipantControlService,
     private readonly contexts: VoiceMediaSessionContextService,
-    private readonly screenShares: ScreenShareLifecycleService,
-    private readonly screenViewing: ScreenShareViewingService,
+    private readonly screenShares: ScreenShareSignalingService,
+    private readonly microphone: VoiceMicrophoneService,
   ) {}
 
   async createTransport(
@@ -84,37 +77,12 @@ export class VoiceSignalingService {
     payload: CreateProducerPayload,
   ): Promise<CreateProducerResponse> {
     const context = await this.contexts.resolve(userId, authenticationSessionId);
-    const { mediaRoomId, participant } = context;
 
     if (payload.source !== "microphone") {
       const producer = await this.screenShares.createProducer(userId, context, payload);
       return { producerId: producer.id };
     }
-    if (!(await this.access.canSpeak(userId, mediaRoomId))) throw new VoiceSpeakForbiddenError();
-
-    const producer = await this.media.createProducer(
-      participant.sessionId,
-      payload.transportId,
-      payload.kind,
-      payload.rtpParameters,
-      participant.selfMuted || participant.moderatorMuted,
-      payload.source,
-      payload.screenStreamId ?? null,
-    );
-
-    await this.speaking.addProducer(mediaRoomId, userId, producer);
-    producer.observer.once("close", () => {
-      this.speaking.forgetProducer(mediaRoomId, producer.id);
-      this.broadcaster.producerClosed(mediaRoomId, producer.id);
-    });
-    this.broadcaster.producerCreated(mediaRoomId, {
-      userId,
-      producerId: producer.id,
-      kind: producer.kind,
-      source: payload.source,
-      screenStreamId: payload.screenStreamId ?? null,
-    });
-
+    const producer = await this.microphone.create(userId, context, payload);
     return { producerId: producer.id };
   }
 
@@ -126,7 +94,7 @@ export class VoiceSignalingService {
     const { participant } = await this.contexts.resolve(userId, authenticationSessionId);
     if (
       this.media.producerSource(payload.producerId) !== "microphone" &&
-      !this.screenViewing.canConsume(participant.sessionId, payload.producerId)
+      !this.screenShares.canConsume(participant.sessionId, payload.producerId)
     ) {
       throw new VoiceCannotConsumeError();
     }
@@ -165,16 +133,14 @@ export class VoiceSignalingService {
     return this.controls.setSelfState(userId, authenticationSessionId, payload);
   }
 
-  async closeProducersForUser(userId: string): Promise<void> {
-    const channelId = await this.state.channelOf(userId);
-    if (!channelId) return;
-    const participant = await this.state.participant(channelId, userId);
-    if (!participant || !this.media.has(participant.sessionId)) return;
+  setModeratorState(
+    userId: string,
+    payload: SetVoiceModeratorStatePayload,
+  ): Promise<VoiceParticipantView> {
+    return this.controls.setModeratorState(userId, payload);
+  }
 
-    for (const producer of this.media.producersOfSession(participant.sessionId)) {
-      if (producer.source !== "microphone") continue;
-      await this.speaking.removeProducer(channelId, producer.producerId);
-      this.media.closeProducer(participant.sessionId, producer.producerId);
-    }
+  async closeProducersForUser(userId: string): Promise<void> {
+    await this.microphone.closeForUser(userId);
   }
 }
