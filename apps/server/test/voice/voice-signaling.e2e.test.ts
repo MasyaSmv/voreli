@@ -14,6 +14,8 @@ import {
   type VoiceProducerEvent,
   type VoiceJoinResponse,
   type VoiceErrorEvent,
+  type ScreenShareEvent,
+  type ScreenShareStoppedEvent,
 } from "@voreli/shared";
 import { io, type Socket } from "socket.io-client";
 import request from "supertest";
@@ -28,6 +30,7 @@ describe("voice signaling", () => {
   let server: SeededServer;
   let alice: SeededUser;
   let bob: SeededUser;
+  let carol: SeededUser;
   let channelId: string;
   let ownerToken: string;
   const sockets: Socket[] = [];
@@ -38,6 +41,7 @@ describe("voice signaling", () => {
     server = await factories.server();
     alice = await factories.member(server);
     bob = await factories.member(server);
+    carol = await factories.member(server);
     channelId = createId();
     await harness.prisma.db.channel.create({
       data: { id: channelId, serverId: server.serverId, name: "Voice", type: "VOICE" },
@@ -59,9 +63,10 @@ describe("voice signaling", () => {
     const rooms = harness.app.get(VoiceRoomService);
     await rooms.leaveUser(alice.id);
     await rooms.leaveUser(bob.id);
+    await rooms.leaveUser(carol.id);
     await harness.prisma.db.server.delete({ where: { id: server.serverId } });
     await harness.prisma.db.user.deleteMany({
-      where: { id: { in: [server.ownerId, alice.id, bob.id] } },
+      where: { id: { in: [server.ownerId, alice.id, bob.id, carol.id] } },
     });
     await harness.close();
   });
@@ -81,7 +86,7 @@ describe("voice signaling", () => {
       .send({
         memberId: bob.memberId,
         allow: "0",
-        deny: serializePermissions(Permission.Speak),
+        deny: serializePermissions(Permission.Speak | Permission.ShareScreen),
       })
       .expect(204);
 
@@ -116,21 +121,226 @@ describe("voice signaling", () => {
       transportId: bobSend.id,
       kind: "audio",
       rtpParameters: rtpParameters(bobJoin.rtpCapabilities),
+      source: "microphone",
     })) as Ack<unknown>;
     expect(forbidden).toMatchObject({ ok: false, errorCode: "VOICE_SPEAK_FORBIDDEN" });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: bobSend.id,
+        kind: "video",
+        rtpParameters: videoRtpParameters(bobJoin.rtpCapabilities),
+        source: "screen-video",
+        screenStreamId: createId(),
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "SCREEN_SHARE_FORBIDDEN" });
 
     const producerEvent = waitFor<VoiceProducerEvent>(bobSocket, VoiceServerEvent.ProducerNew);
     const produced = ok<CreateProducerResponse>(
       await aliceSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
         transportId: aliceSend.id,
         kind: "audio",
-        rtpParameters: rtpParameters(aliceJoin.rtpCapabilities),
+        rtpParameters: rtpParameters(aliceJoin.rtpCapabilities, 44_444_444),
+        source: "microphone",
       }),
     );
     await expect(producerEvent).resolves.toMatchObject({
       userId: alice.id,
       producerId: produced.producerId,
+      source: "microphone",
+      screenStreamId: null,
     });
+
+    const screenStreamId = createId();
+    let screenAnnouncedAsMicrophone = false;
+    const countUnexpectedProducer = (): void => {
+      screenAnnouncedAsMicrophone = true;
+    };
+    bobSocket.once(VoiceServerEvent.ProducerNew, countUnexpectedProducer);
+    const screenProducer = ok<CreateProducerResponse>(
+      await aliceSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: aliceSend.id,
+        kind: "video",
+        rtpParameters: videoRtpParameters(aliceJoin.rtpCapabilities),
+        source: "screen-video",
+        screenStreamId,
+      }),
+    );
+    const screenAudioProducer = ok<CreateProducerResponse>(
+      await aliceSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: aliceSend.id,
+        kind: "audio",
+        rtpParameters: rtpParameters(aliceJoin.rtpCapabilities, 22_222_222, "screen-audio"),
+        source: "screen-audio",
+        screenStreamId,
+      }),
+    );
+    const screenStarted = waitFor<ScreenShareEvent>(bobSocket, VoiceServerEvent.ScreenStarted);
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.ScreenStart, {
+        mediaRoomId: channelId,
+        videoProducerId: screenProducer.producerId,
+        audioProducerId: screenAudioProducer.producerId,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { screenShare: { id: screenStreamId, videoProducerId: screenProducer.producerId } },
+    });
+    await expect(screenStarted).resolves.toMatchObject({
+      screenShare: { id: screenStreamId, userId: alice.id },
+    });
+    expect(screenAnnouncedAsMicrophone).toBe(false);
+
+    const screenUpdated = waitFor<ScreenShareEvent>(bobSocket, VoiceServerEvent.ScreenUpdated);
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.ScreenAudioStop, {
+        mediaRoomId: channelId,
+        screenStreamId,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+    await expect(screenUpdated).resolves.toMatchObject({
+      screenShare: { id: screenStreamId, audioProducerId: null },
+    });
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: aliceSend.id,
+        kind: "video",
+        rtpParameters: videoRtpParameters(aliceJoin.rtpCapabilities),
+        source: "screen-video",
+        screenStreamId: createId(),
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "SCREEN_SHARE_INVALID_STATE" });
+
+    const carolSocket = await connect(await login(carol));
+    const carolJoin = ok<VoiceJoinResponse>(
+      await carolSocket.emitWithAck(VoiceClientEvent.Join, { channelId }),
+    );
+    expect(carolJoin.screenShares).toEqual([
+      expect.objectContaining({ id: screenStreamId, videoProducerId: screenProducer.producerId }),
+    ]);
+    await expect(carolSocket.emitWithAck(VoiceClientEvent.Leave, {})).resolves.toEqual({
+      ok: true,
+      data: null,
+    });
+
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.CreateConsumer, {
+        transportId: bobRecv.id,
+        producerId: screenProducer.producerId,
+        rtpCapabilities: bobJoin.rtpCapabilities,
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "VOICE_CANNOT_CONSUME" });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ScreenWatch, {
+        mediaRoomId: channelId,
+        screenStreamId,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { producers: [{ producerId: screenProducer.producerId, source: "screen-video" }] },
+    });
+    const screenConsumer = ok<CreateConsumerResponse>(
+      await bobSocket.emitWithAck(VoiceClientEvent.CreateConsumer, {
+        transportId: bobRecv.id,
+        producerId: screenProducer.producerId,
+        rtpCapabilities: bobJoin.rtpCapabilities,
+      }),
+    );
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ScreenLayer, {
+        mediaRoomId: channelId,
+        screenStreamId,
+        spatialLayer: 2,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ScreenVisibility, {
+        mediaRoomId: channelId,
+        screenStreamId,
+        visible: false,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ScreenVisibility, {
+        mediaRoomId: channelId,
+        screenStreamId,
+        visible: true,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ScreenUnwatch, {
+        mediaRoomId: channelId,
+        screenStreamId,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+    await expect(
+      bobSocket.emitWithAck(VoiceClientEvent.ResumeConsumer, {
+        consumerId: screenConsumer.consumerId,
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "VOICE_MEDIA_OBJECT_NOT_FOUND" });
+
+    const screenStopped = waitFor<ScreenShareStoppedEvent>(
+      bobSocket,
+      VoiceServerEvent.ScreenStopped,
+    );
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.ScreenStop, {
+        mediaRoomId: channelId,
+        screenStreamId,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+    await expect(screenStopped).resolves.toMatchObject({ screenStreamId, reason: "stopped" });
+
+    const abortedScreenStreamId = createId();
+    ok<CreateProducerResponse>(
+      await aliceSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: aliceSend.id,
+        kind: "video",
+        rtpParameters: videoRtpParameters(aliceJoin.rtpCapabilities),
+        source: "screen-video",
+        screenStreamId: abortedScreenStreamId,
+      }),
+    );
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.ScreenAbort, {
+        mediaRoomId: channelId,
+        screenStreamId: abortedScreenStreamId,
+      }),
+    ).resolves.toEqual({ ok: true, data: null });
+
+    const revokedScreenStreamId = createId();
+    const revokedScreenProducer = ok<CreateProducerResponse>(
+      await aliceSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: aliceSend.id,
+        kind: "video",
+        rtpParameters: videoRtpParameters(aliceJoin.rtpCapabilities),
+        source: "screen-video",
+        screenStreamId: revokedScreenStreamId,
+      }),
+    );
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.ScreenStart, {
+        mediaRoomId: channelId,
+        videoProducerId: revokedScreenProducer.producerId,
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    const permissionRevoked = waitFor<ScreenShareStoppedEvent>(
+      bobSocket,
+      VoiceServerEvent.ScreenStopped,
+    );
+    await request(harness.app.getHttpServer())
+      .put(`/channels/${channelId}/overrides`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({
+        memberId: alice.memberId,
+        allow: "0",
+        deny: serializePermissions(Permission.ShareScreen),
+      })
+      .expect(204);
+    await expect(permissionRevoked).resolves.toMatchObject({
+      screenStreamId: revokedScreenStreamId,
+      reason: "permission-revoked",
+    });
+    expect(aliceSocket.connected).toBe(true);
 
     const wrongDirection = (await bobSocket.emitWithAck(VoiceClientEvent.CreateConsumer, {
       transportId: bobSend.id,
@@ -232,12 +442,14 @@ function waitFor<T>(socket: Socket, event: string): Promise<T> {
 
 function rtpParameters(
   capabilities: VoiceJoinResponse["rtpCapabilities"],
+  ssrc = 22_222_222,
+  mid = "audio",
 ): CreateProducerPayload["rtpParameters"] {
   const opus = capabilities.codecs?.find((codec) => codec.mimeType === "audio/opus");
   if (!opus) throw new Error("Voice Router has no Opus codec");
 
   return {
-    mid: "audio",
+    mid,
     codecs: [
       {
         mimeType: opus.mimeType,
@@ -249,7 +461,30 @@ function rtpParameters(
       },
     ],
     headerExtensions: [],
-    encodings: [{ ssrc: 22_222_222 }],
+    encodings: [{ ssrc }],
     rtcp: { cname: "voreli-voice-e2e" },
+  };
+}
+
+function videoRtpParameters(
+  capabilities: VoiceJoinResponse["rtpCapabilities"],
+): CreateProducerPayload["rtpParameters"] {
+  const vp8 = capabilities.codecs?.find((codec) => codec.mimeType.toLowerCase() === "video/vp8");
+  if (!vp8) throw new Error("Voice Router has no VP8 codec");
+
+  return {
+    mid: "screen-video",
+    codecs: [
+      {
+        mimeType: vp8.mimeType,
+        payloadType: vp8.preferredPayloadType,
+        clockRate: vp8.clockRate,
+        parameters: vp8.parameters ?? {},
+        rtcpFeedback: vp8.rtcpFeedback ?? [],
+      },
+    ],
+    headerExtensions: [],
+    encodings: [{ ssrc: 33_333_333 }],
+    rtcp: { cname: "voreli-screen-e2e" },
   };
 }

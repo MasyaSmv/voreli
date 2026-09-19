@@ -20,6 +20,7 @@ import {
 import { MediaRoomAccessService } from "./media-room-access.service.js";
 import { SpeakingService } from "./speaking.service.js";
 import { VoiceRoomNotifier } from "./voice-room-notifier.js";
+import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
 
 @Injectable()
 export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
@@ -41,6 +42,7 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
     private readonly access: MediaRoomAccessService,
     private readonly notifier: VoiceRoomNotifier,
     private readonly speaking: SpeakingService,
+    private readonly screenShares: ScreenShareLifecycleService,
   ) {
     this.instanceId = config.get("INSTANCE_ID", { infer: true });
     this.graceMs = config.get("VOICE_RECONNECT_GRACE", { infer: true }) * 1_000;
@@ -147,6 +149,7 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
         resumed: result.kind === "resumed",
         rtpCapabilities: handle.router.rtpCapabilities,
         participants,
+        screenShares: await this.screenShares.activeIn(channelId),
       };
     } finally {
       if (!retained) this.routers.release(channelId);
@@ -257,10 +260,13 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async closeOwnedMediaSession(channelId: string, sessionId: string): Promise<void> {
+    await this.screenShares.stopForSession(sessionId, "left");
     const producers = this.media.closeSession(sessionId);
     if (producers === null) return;
     await Promise.all(
-      producers.map((producer) => this.speaking.removeProducer(channelId, producer.producerId)),
+      producers
+        .filter((producer) => producer.source === "microphone")
+        .map((producer) => this.speaking.removeProducer(channelId, producer.producerId)),
     );
     this.reconnectSources.delete(
       this.reconnectKey(channelId, this.sessionOwners.get(sessionId)?.userId ?? ""),

@@ -1,3 +1,5 @@
+import type { ScreenShareView } from "@voreli/shared";
+
 export const VOICE_STATE_REPOSITORY = Symbol("VOICE_STATE_REPOSITORY");
 
 export interface VoiceParticipantState {
@@ -48,6 +50,9 @@ export interface VoiceStateRepository {
   join(input: VoiceJoinInput): Promise<VoiceJoinResult>;
   participant(channelId: string, userId: string): Promise<VoiceParticipantState | null>;
   participants(channelId: string): Promise<readonly VoiceParticipantState[]>;
+  screenShares(channelId: string): Promise<readonly ScreenShareView[]>;
+  saveScreenShare(screenShare: ScreenShareView): Promise<void>;
+  removeScreenShare(channelId: string, screenStreamId: string): Promise<void>;
   disconnect(
     channelId: string,
     userId: string,

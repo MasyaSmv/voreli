@@ -66,7 +66,7 @@ export class VoiceConnection {
         target === "channel" ? { channelId } : { mediaRoomId: channelId },
       );
       joinedServer = true;
-      this.state.joined(channelId, joined.sessionId, joined.participants);
+      this.state.joined(channelId, joined.sessionId, joined.participants, joined.screenShares);
 
       stream = await microphone;
       await this.buildMedia(joined, stream);
@@ -91,7 +91,7 @@ export class VoiceConnection {
         ? { mediaRoomId: channelId, sessionId }
         : { channelId, sessionId },
     );
-    this.state.resumed(joined.sessionId, joined.participants);
+    this.state.resumed(joined.sessionId, joined.participants, joined.screenShares);
 
     if (joined.resumed) {
       const own = this.state.participant(sessionUserId());

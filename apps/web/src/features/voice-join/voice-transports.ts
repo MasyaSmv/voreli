@@ -81,12 +81,20 @@ function bindSignaling(
 
 /** Only a send transport produces, which is why this is not part of the shared binding. */
 function bindProducing(transport: types.Transport, signaling: VoiceSignaling): void {
-  transport.on("produce", ({ kind, rtpParameters }, accept, reject) => {
+  transport.on("produce", ({ kind, rtpParameters, appData }, accept, reject) => {
+    const metadata = appData as { source?: unknown; screenStreamId?: unknown };
     void signaling
       .request<CreateProducerResponse>(VoiceClientEvent.CreateProducer, {
         transportId: transport.id,
         kind,
         rtpParameters,
+        source:
+          metadata.source === "screen-video" || metadata.source === "screen-audio"
+            ? metadata.source
+            : "microphone",
+        ...(typeof metadata.screenStreamId === "string"
+          ? { screenStreamId: metadata.screenStreamId }
+          : {}),
       })
       .then(({ producerId }) => accept({ id: producerId }), reject);
   });

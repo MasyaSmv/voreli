@@ -39,6 +39,11 @@ export class VoiceChannelAccessService {
     return resolved !== null && hasPermission(resolved.channelPermissions, Permission.Speak);
   }
 
+  async canShareScreen(userId: string, channelId: string): Promise<boolean> {
+    const resolved = await this.permissions.forChannel(userId, channelId);
+    return resolved !== null && hasPermission(resolved.channelPermissions, Permission.ShareScreen);
+  }
+
   async canConnect(userId: string, channelId: string): Promise<boolean> {
     const [channel, resolved] = await Promise.all([
       this.prisma.db.channel.findUnique({ where: { id: channelId }, select: { type: true } }),

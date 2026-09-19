@@ -16,6 +16,8 @@ import {
   VOICE_NAMESPACE,
   VoiceClientEvent,
   type VoiceJoinResponse,
+  type ScreenShareResponse,
+  type ScreenShareProducersResponse,
 } from "@voreli/shared";
 import type { Namespace } from "socket.io";
 
@@ -44,6 +46,15 @@ import {
   VoiceJoinDto,
 } from "./dto/voice-signaling.dto.js";
 import { VOICE_STATE_REPOSITORY, type VoiceStateRepository } from "./voice-state.repository.js";
+import {
+  StartScreenShareDto,
+  ScreenShareDto,
+  ScreenShareLayerDto,
+  ScreenShareVisibilityDto,
+} from "./dto/screen-share.dto.js";
+import { VoiceMediaSessionContextService } from "./voice-media-session-context.service.js";
+import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
+import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
 
 @WebSocketGateway({ namespace: VOICE_NAMESPACE })
 @UseInterceptors(WsRateLimitInterceptor)
@@ -62,6 +73,9 @@ export class VoiceGateway extends AuthenticatedGateway {
     private readonly broadcaster: VoiceBroadcaster,
     private readonly membership: VoiceSocketMembershipService,
     private readonly controls: VoiceParticipantControlService,
+    private readonly contexts: VoiceMediaSessionContextService,
+    private readonly screenShares: ScreenShareLifecycleService,
+    private readonly screenViewing: ScreenShareViewingService,
   ) {
     super(authentication, events);
   }
@@ -261,5 +275,166 @@ export class VoiceGateway extends AuthenticatedGateway {
         ),
       },
     }));
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenStart)
+  async startScreenShare(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<ScreenShareResponse>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(StartScreenShareDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      if (context.mediaRoomId !== command.mediaRoomId) {
+        return {
+          ok: false,
+          errorCode: "VOICE_SESSION_NOT_FOUND",
+          message: "Voice session does not exist",
+        };
+      }
+      return {
+        ok: true,
+        data: {
+          screenShare: await this.screenShares.start(
+            identity.user.id,
+            context,
+            command.videoProducerId,
+            command.audioProducerId,
+          ),
+        },
+      };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenStop)
+  async stopScreenShare(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      if (context.mediaRoomId !== command.mediaRoomId) {
+        return {
+          ok: false,
+          errorCode: "VOICE_SESSION_NOT_FOUND",
+          message: "Voice session does not exist",
+        };
+      }
+      await this.screenShares.stop(identity.user.id, context, command.screenStreamId);
+      return { ok: true, data: null };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenAbort)
+  async abortScreenShare(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      if (context.mediaRoomId !== command.mediaRoomId) {
+        return {
+          ok: false,
+          errorCode: "VOICE_SESSION_NOT_FOUND",
+          message: "Voice session does not exist",
+        };
+      }
+      this.screenShares.abort(identity.user.id, context, command.screenStreamId);
+      return { ok: true, data: null };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenWatch)
+  async watchScreenShare(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<ScreenShareProducersResponse>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      const producers = this.screenShares.producersFor(
+        context,
+        command.mediaRoomId,
+        command.screenStreamId,
+      );
+      this.screenViewing.watch(context, command.screenStreamId, producers);
+      return {
+        ok: true,
+        data: {
+          producers,
+        },
+      };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenAudioStop)
+  async stopScreenShareAudio(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      if (context.mediaRoomId !== command.mediaRoomId) {
+        return {
+          ok: false,
+          errorCode: "VOICE_SESSION_NOT_FOUND",
+          message: "Voice session does not exist",
+        };
+      }
+      await this.screenShares.stopAudio(identity.user.id, context, command.screenStreamId);
+      return { ok: true, data: null };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenUnwatch)
+  async unwatchScreenShare(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      this.screenViewing.unwatch(context, command.mediaRoomId, command.screenStreamId);
+      return { ok: true, data: null };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenLayer)
+  async setScreenShareLayer(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareLayerDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      await this.screenViewing.setLayer(
+        context,
+        command.mediaRoomId,
+        command.screenStreamId,
+        command.spatialLayer,
+      );
+      return { ok: true, data: null };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenVisibility)
+  async setScreenShareVisibility(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareVisibilityDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      await this.screenViewing.setVisible(
+        context,
+        command.mediaRoomId,
+        command.screenStreamId,
+        command.visible,
+      );
+      return { ok: true, data: null };
+    });
   }
 }

@@ -271,15 +271,33 @@ describe("Redis voice state", () => {
       socketId: "socket",
       newSessionId: "session",
     });
+    await repository.saveScreenShare({
+      id: "screen-one",
+      mediaRoomId: "own-channel",
+      userId: "user",
+      videoProducerId: "video-one",
+      audioProducerId: null,
+    });
     await claim("foreign-channel", "foreign-instance");
 
     await expect(repository.touch("user")).resolves.toBe(true);
     await expect(redis.ttl("voice:user:user")).resolves.toBeGreaterThan(0);
     await expect(redis.ttl("voice:channel:own-channel")).resolves.toBeGreaterThan(0);
     await expect(redis.ttl("voice:channel:own-channel:meta")).resolves.toBeGreaterThan(0);
+    await expect(redis.ttl("voice:channel:own-channel:screens")).resolves.toBeGreaterThan(0);
+    await expect(repository.screenShares("own-channel")).resolves.toEqual([
+      {
+        id: "screen-one",
+        mediaRoomId: "own-channel",
+        userId: "user",
+        videoProducerId: "video-one",
+        audioProducerId: null,
+      },
+    ]);
 
     await expect(repository.removeRoomsOwnedBy("own-instance")).resolves.toBe(1);
     await expect(redis.exists("voice:channel:own-channel")).resolves.toBe(0);
+    await expect(redis.exists("voice:channel:own-channel:screens")).resolves.toBe(0);
     await expect(redis.exists("voice:user:user")).resolves.toBe(0);
     await expect(redis.exists("voice:channel:foreign-channel:meta")).resolves.toBe(1);
   });

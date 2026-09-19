@@ -47,6 +47,7 @@ export function VoicePanel({
         <VoiceRoom
           participants={voice.participants}
           speakingUserIds={voice.speakingUserIds}
+          screenShares={voice.screenShares}
           currentUserId={currentUser?.id}
           currentUserName={currentUser?.displayName}
           own={own}

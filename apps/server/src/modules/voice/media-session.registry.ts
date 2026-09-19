@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { TransportDirection } from "@voreli/shared";
+import type { TransportDirection, VoiceMediaSource } from "@voreli/shared";
 import type { types } from "mediasoup";
 
 import type { EnvironmentVariables } from "../../config/env.validation.js";
@@ -43,6 +43,8 @@ interface RoomProducer {
 export interface SessionProducerView {
   readonly producerId: string;
   readonly kind: types.MediaKind;
+  readonly source: VoiceMediaSource;
+  readonly screenStreamId: string | null;
 }
 
 type TransportFailureHandler = (sessionId: string) => Promise<void> | void;
@@ -158,6 +160,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     kind: types.MediaKind,
     rtpParameters: types.RtpParameters,
     paused: boolean,
+    source: VoiceMediaSource,
+    screenStreamId: string | null,
   ): Promise<types.Producer> {
     const session = this.session(sessionId);
     const transport = this.ownedTransport(sessionId, transportId);
@@ -166,11 +170,25 @@ export class MediaSessionRegistry implements OnModuleDestroy {
       throw new VoiceInvalidTransportDirectionError();
     }
 
-    if (session.producers.size >= 1 || kind !== "audio") {
+    const validSource =
+      (source === "microphone" && kind === "audio" && screenStreamId === null) ||
+      (source === "screen-video" && kind === "video" && screenStreamId !== null) ||
+      (source === "screen-audio" && kind === "audio" && screenStreamId !== null);
+    const duplicateSource = [...session.producers.values()].some(
+      (current) =>
+        current.appData["source"] === source &&
+        (source === "microphone" || current.appData["screenStreamId"] === screenStreamId),
+    );
+    if (session.producers.size >= 3 || !validSource || duplicateSource) {
       throw new VoiceMediaObjectLimitError("producer");
     }
 
-    const producer = await transport.transport.produce({ kind, rtpParameters, paused });
+    const producer = await transport.transport.produce({
+      kind,
+      rtpParameters,
+      paused,
+      appData: { source, screenStreamId },
+    });
     session.producers.set(producer.id, producer);
     this.producers.set(producer.id, { channelId: session.channelId, sessionId, producer });
 
@@ -229,10 +247,49 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     }
   }
 
+  closeConsumersForProducers(sessionId: string, producerIds: ReadonlySet<string>): void {
+    for (const owned of this.session(sessionId).consumers.values()) {
+      if (producerIds.has(owned.producerId)) owned.consumer.close();
+    }
+  }
+
+  async setPreferredScreenLayer(
+    sessionId: string,
+    producerIds: ReadonlySet<string>,
+    spatialLayer: 0 | 1 | 2,
+  ): Promise<void> {
+    await Promise.all(
+      [...this.session(sessionId).consumers.values()]
+        .filter((owned) => producerIds.has(owned.producerId) && owned.consumer.kind === "video")
+        .map((owned) => owned.consumer.setPreferredLayers({ spatialLayer })),
+    );
+  }
+
+  async setScreenConsumersPaused(
+    sessionId: string,
+    producerIds: ReadonlySet<string>,
+    paused: boolean,
+  ): Promise<void> {
+    await Promise.all(
+      [...this.session(sessionId).consumers.values()]
+        .filter(
+          (owned) =>
+            producerIds.has(owned.producerId) &&
+            owned.consumer.kind === "video" &&
+            (paused || owned.clientReady),
+        )
+        .map((owned) => (paused ? owned.consumer.pause() : owned.consumer.resume())),
+    );
+  }
+
   async setProducerPaused(sessionId: string, paused: boolean): Promise<void> {
     await Promise.all(
       [...this.session(sessionId).producers.values()].map((producer) =>
-        paused ? producer.pause() : producer.resume(),
+        producer.appData["source"] === "microphone"
+          ? paused
+            ? producer.pause()
+            : producer.resume()
+          : Promise.resolve(),
       ),
     );
   }
@@ -240,7 +297,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
   async setConsumersPaused(sessionId: string, paused: boolean): Promise<void> {
     await Promise.all(
       [...this.session(sessionId).consumers.values()]
-        .filter((owned) => paused || owned.clientReady)
+        .filter((owned) => owned.consumer.kind === "audio" && (paused || owned.clientReady))
         .map((owned) => (paused ? owned.consumer.pause() : owned.consumer.resume())),
     );
   }
@@ -249,13 +306,34 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     return [...this.session(sessionId).producers.values()].map((producer) => ({
       producerId: producer.id,
       kind: producer.kind,
+      source: producer.appData["source"] as VoiceMediaSource,
+      screenStreamId: (producer.appData["screenStreamId"] as string | null) ?? null,
     }));
+  }
+
+  producerOfSession(sessionId: string, producerId: string): SessionProducerView | null {
+    const producer = this.session(sessionId).producers.get(producerId);
+    return producer ? this.producerView(producer) : null;
+  }
+
+  producerSource(producerId: string): VoiceMediaSource | null {
+    const producer = this.producers.get(producerId)?.producer;
+    return producer ? (producer.appData["source"] as VoiceMediaSource) : null;
   }
 
   closeProducer(sessionId: string, producerId: string): void {
     const producer = this.session(sessionId).producers.get(producerId);
     if (!producer) throw new VoiceMediaObjectNotFoundError();
     producer.close();
+  }
+
+  private producerView(producer: types.Producer): SessionProducerView {
+    return {
+      producerId: producer.id,
+      kind: producer.kind,
+      source: producer.appData["source"] as VoiceMediaSource,
+      screenStreamId: (producer.appData["screenStreamId"] as string | null) ?? null,
+    };
   }
 
   closeSession(sessionId: string): readonly SessionProducerView[] | null {
@@ -270,6 +348,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     const producers = [...session.producers.values()].map((producer) => ({
       producerId: producer.id,
       kind: producer.kind,
+      source: producer.appData["source"] as VoiceMediaSource,
+      screenStreamId: (producer.appData["screenStreamId"] as string | null) ?? null,
     }));
 
     for (const transport of session.transports.values()) {

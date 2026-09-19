@@ -1,4 +1,4 @@
-import type { VoiceParticipantView, VoiceProducerView } from "@voreli/shared";
+import type { ScreenShareView, VoiceParticipantView, VoiceProducerView } from "@voreli/shared";
 
 import { useVoice } from "../../entities/voice/voice.store";
 import { i18n } from "../../shared/i18n/i18n";
@@ -43,8 +43,9 @@ export class VoiceSessionState {
     channelId: string,
     sessionId: string,
     participants: readonly VoiceParticipantView[],
+    screenShares: readonly ScreenShareView[] = [],
   ): void {
-    useVoice.getState().replace({ channelId, sessionId, participants });
+    useVoice.getState().replace({ channelId, sessionId, participants, screenShares });
   }
 
   connected(): void {
@@ -55,8 +56,12 @@ export class VoiceSessionState {
     useVoice.getState().replace({ connection: "reconnecting" });
   }
 
-  resumed(sessionId: string, participants: readonly VoiceParticipantView[]): void {
-    useVoice.getState().replace({ sessionId, participants, connection: "connected" });
+  resumed(
+    sessionId: string,
+    participants: readonly VoiceParticipantView[],
+    screenShares: readonly ScreenShareView[] = [],
+  ): void {
+    useVoice.getState().replace({ sessionId, participants, screenShares, connection: "connected" });
   }
 
   /**
@@ -70,6 +75,9 @@ export class VoiceSessionState {
       connection: "idle",
       participants: [],
       speakingUserIds: new Set(),
+      screenShares: [],
+      selectedScreenShareId: null,
+      screenAudioBlocked: false,
       ...(options.clearError ? { error: null } : {}),
     });
   }
@@ -114,5 +122,23 @@ export class VoiceSessionState {
         producers: participant.producers.filter((producer) => producer.producerId !== producerId),
       });
     }
+  }
+
+  upsertScreenShare(screenShare: ScreenShareView): void {
+    useVoice.getState().upsertScreenShare(screenShare);
+  }
+
+  removeScreenShare(screenStreamId: string): void {
+    useVoice.getState().removeScreenShare(screenStreamId);
+  }
+
+  selectScreenShare(screenStreamId: string | null): void {
+    useVoice
+      .getState()
+      .replace({ selectedScreenShareId: screenStreamId, screenAudioBlocked: false });
+  }
+
+  setScreenAudioBlocked(blocked: boolean): void {
+    useVoice.getState().replace({ screenAudioBlocked: blocked });
   }
 }

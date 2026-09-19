@@ -98,7 +98,9 @@ const bob: VoiceParticipantView = {
   selfDeafened: false,
   moderatorMuted: false,
   moderatorDeafened: false,
-  producers: [{ producerId: "producer-bob", kind: "audio" }],
+  producers: [
+    { producerId: "producer-bob", kind: "audio", source: "microphone", screenStreamId: null },
+  ],
 };
 
 describe("bindVoiceServerEvents", () => {
@@ -113,7 +115,14 @@ describe("bindVoiceServerEvents", () => {
     media = new RecordingMedia();
     speaking = new RecordingSpeakers();
     lifecycle = new RecordingLifecycle();
-    bindVoiceServerEvents(signaling, { state, media, speaking, lifecycle });
+    bindVoiceServerEvents(signaling, {
+      state,
+      media,
+      speaking,
+      screenViewing: { updated: () => undefined, stopped: () => undefined },
+      screenPublishing: { stopped: () => undefined },
+      lifecycle,
+    });
   });
 
   afterEach(() => {
@@ -145,10 +154,12 @@ describe("bindVoiceServerEvents", () => {
       userId: bob.userId,
       producerId: "producer-bob",
       kind: "audio" as const,
+      source: "microphone" as const,
+      screenStreamId: null,
     });
 
     expect(state.participant(bob.userId)?.producers).toEqual([
-      { producerId: "producer-bob", kind: "audio" },
+      { producerId: "producer-bob", kind: "audio", source: "microphone", screenStreamId: null },
     ]);
     expect(media.consumed).toEqual([{ userId: bob.userId, producerId: "producer-bob" }]);
   });
@@ -162,6 +173,8 @@ describe("bindVoiceServerEvents", () => {
       userId: "user-alice",
       producerId: "producer-alice",
       kind: "audio" as const,
+      source: "microphone" as const,
+      screenStreamId: null,
     });
 
     expect(media.consumed).toEqual([{ userId: "user-alice", producerId: "producer-alice" }]);

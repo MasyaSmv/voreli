@@ -4,6 +4,8 @@ import {
   type VoiceParticipantView,
   type VoiceProducerEvent,
   type VoiceSpeakingEvent,
+  type ScreenShareView,
+  type ScreenShareStoppedEvent,
 } from "@voreli/shared";
 import type { Namespace } from "socket.io";
 
@@ -42,6 +44,22 @@ export class VoiceBroadcaster {
 
   speaking(channelId: string, event: VoiceSpeakingEvent): void {
     this.emit(channelId, VoiceServerEvent.Speaking, event);
+  }
+
+  screenStarted(mediaRoomId: string, screenShare: ScreenShareView): void {
+    this.emit(mediaRoomId, VoiceServerEvent.ScreenStarted, { screenShare });
+  }
+
+  screenUpdated(mediaRoomId: string, screenShare: ScreenShareView): void {
+    this.emit(mediaRoomId, VoiceServerEvent.ScreenUpdated, { screenShare });
+  }
+
+  screenStopped(
+    mediaRoomId: string,
+    screenStreamId: string,
+    reason: ScreenShareStoppedEvent["reason"],
+  ): void {
+    this.emit(mediaRoomId, VoiceServerEvent.ScreenStopped, { mediaRoomId, screenStreamId, reason });
   }
 
   private emit(channelId: string, event: string, payload: unknown): void {
