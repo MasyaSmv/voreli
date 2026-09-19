@@ -6,12 +6,8 @@ import {
   type DomainEventMap,
 } from "../../common/events/domain-event-bus.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
-import { VoiceChannelAccessService } from "./voice-channel-access.service.js";
-import { VoiceRoomService } from "./voice-room.service.js";
-import { VoiceSignalingService } from "./voice-signaling.service.js";
-import { VoiceSocketMembershipService } from "./voice-socket-membership.service.js";
 import { VOICE_STATE_REPOSITORY, type VoiceStateRepository } from "./voice-state.repository.js";
-import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
+import { VoicePermissionEnforcementService } from "./voice-permission-enforcement.service.js";
 
 @Injectable()
 export class VoicePermissionRevalidationService implements OnModuleInit, OnModuleDestroy {
@@ -21,11 +17,7 @@ export class VoicePermissionRevalidationService implements OnModuleInit, OnModul
     @Inject(DOMAIN_EVENT_BUS) private readonly events: DomainEventBus,
     @Inject(VOICE_STATE_REPOSITORY) private readonly state: VoiceStateRepository,
     private readonly prisma: PrismaService,
-    private readonly access: VoiceChannelAccessService,
-    private readonly rooms: VoiceRoomService,
-    private readonly signaling: VoiceSignalingService,
-    private readonly membership: VoiceSocketMembershipService,
-    private readonly screenShares: ScreenShareLifecycleService,
+    private readonly enforcement: VoicePermissionEnforcementService,
   ) {}
 
   onModuleInit(): void {
@@ -60,17 +52,6 @@ export class VoicePermissionRevalidationService implements OnModuleInit, OnModul
   }
 
   private async recheckUser(userId: string, channelId: string): Promise<void> {
-    if (!(await this.access.canConnect(userId, channelId))) {
-      await this.membership.evictUser(userId, channelId);
-      await this.rooms.leaveUser(userId);
-      return;
-    }
-
-    if (!(await this.access.canSpeak(userId, channelId))) {
-      await this.signaling.closeProducersForUser(userId);
-    }
-    if (!(await this.access.canShareScreen(userId, channelId))) {
-      await this.screenShares.stopForUser(userId, channelId);
-    }
+    await this.enforcement.enforce(userId, channelId);
   }
 }

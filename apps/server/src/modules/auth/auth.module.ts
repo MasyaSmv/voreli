@@ -6,7 +6,9 @@ import { RateLimitModule } from "../../common/rate-limit/rate-limit.module.js";
 import type { EnvironmentVariables } from "../../config/env.validation.js";
 import { AccessTokenGuard } from "./access-token.guard.js";
 import { AccessTokenService } from "./access-token.service.js";
-import { AuthController } from "./auth.controller.js";
+import { AuthSessionsController } from "./auth-sessions.controller.js";
+import { BrowserSessionResponder } from "./browser-session.responder.js";
+import { CredentialsController } from "./credentials.controller.js";
 import { InviteRedemptionService } from "./invite-redemption.service.js";
 import { LoginService } from "./login.service.js";
 import { RefreshCookie } from "./refresh-cookie.js";
@@ -27,10 +29,11 @@ import { UserPresenter } from "./user-presenter.js";
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [CredentialsController, AuthSessionsController],
   providers: [
     AccessTokenGuard,
     AccessTokenService,
+    BrowserSessionResponder,
     InviteRedemptionService,
     LoginService,
     RefreshCookie,

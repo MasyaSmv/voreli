@@ -106,7 +106,8 @@ export function decodeCallEventContent(bytes: Uint8Array): CallEventContentV1 | 
   let parsed: unknown;
   try {
     parsed = JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
+  } catch (error: unknown) {
+    console.warn("Ignoring malformed call-event content", { error });
     return null;
   }
   if (typeof parsed !== "object" || parsed === null) return null;

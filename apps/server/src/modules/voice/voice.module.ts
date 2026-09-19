@@ -27,6 +27,10 @@ import { VoiceParticipantControlService } from "./voice-participant-control.serv
 import { VoiceMediaSessionContextService } from "./voice-media-session-context.service.js";
 import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
 import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
+import { ScreenShareSignalingService } from "./screen-share-signaling.service.js";
+import { VoiceMicrophoneService } from "./voice-microphone.service.js";
+import { VoicePermissionEnforcementService } from "./voice-permission-enforcement.service.js";
+import { VoiceLocalMediaService } from "./voice-local-media.service.js";
 
 @Module({
   imports: [
@@ -57,6 +61,10 @@ import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
     VoiceMediaSessionContextService,
     ScreenShareViewingService,
     ScreenShareLifecycleService,
+    ScreenShareSignalingService,
+    VoiceMicrophoneService,
+    VoicePermissionEnforcementService,
+    VoiceLocalMediaService,
     RedisVoiceStateRepository,
     { provide: VOICE_STATE_REPOSITORY, useExisting: RedisVoiceStateRepository },
   ],

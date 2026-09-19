@@ -64,7 +64,11 @@ export function VoicePanel({
           {activeHere ? (
             <button
               type="button"
-              onClick={() => void voiceSession.resumeAudio().catch(() => undefined)}
+              onClick={() =>
+                void voiceSession.resumeAudio().catch((error: unknown) => {
+                  console.error("Failed to resume voice playback", { error });
+                })
+              }
               className="shrink-0 rounded-lg bg-panel-raised px-3 py-2 text-xs font-semibold text-ink transition hover:bg-panel-hover"
             >
               {t("voice.allowAudio")}
@@ -101,7 +105,11 @@ function JoinView({
         </p>
         <button
           type="button"
-          onClick={() => void voiceSession.join(channelId).catch(() => undefined)}
+          onClick={() =>
+            void voiceSession.join(channelId).catch((error: unknown) => {
+              console.error("Failed to join the voice room", { error, channelId });
+            })
+          }
           className="mt-7 inline-flex min-h-11 items-center gap-2 rounded-xl bg-voice px-5 text-sm font-bold text-voice-ink shadow-voice transition hover:-translate-y-0.5 hover:bg-voice-hover"
         >
           <Icon name="radio" className="h-4 w-4" />

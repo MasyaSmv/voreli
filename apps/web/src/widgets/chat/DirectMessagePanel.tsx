@@ -38,7 +38,14 @@ export function DirectMessagePanel({
             <button
               type="button"
               disabled={activeCall !== null}
-              onClick={() => void directCallSession.start(conversation.id).catch(() => undefined)}
+              onClick={() =>
+                void directCallSession.start(conversation.id).catch((error: unknown) => {
+                  console.error("Failed to start a direct call", {
+                    error,
+                    conversationId: conversation.id,
+                  });
+                })
+              }
               aria-label={t("call.start", { name: conversation.participant.displayName })}
               title={
                 activeCall

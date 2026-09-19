@@ -26,7 +26,8 @@ export function ContactSearch(props: ContactSearchProps) {
       const response = await lookupContact(username);
       setResult(response.user === null ? null : { key: props.resetKey, profile: response.user });
       if (response.user === null) setLookupError(t("friends.notFound"));
-    } catch {
+    } catch (error: unknown) {
+      console.error("Contact lookup failed", { error, username });
       setResult(null);
       setLookupError(t("friends.notFound"));
     }

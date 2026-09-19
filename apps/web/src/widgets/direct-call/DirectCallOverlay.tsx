@@ -74,7 +74,11 @@ export function DirectCallOverlay() {
               {active ? (
                 <button
                   type="button"
-                  onClick={() => void voiceSession.resumeAudio().catch(() => undefined)}
+                  onClick={() =>
+                    void voiceSession.resumeAudio().catch((error: unknown) => {
+                      console.error("Failed to resume direct-call audio", { error });
+                    })
+                  }
                   className="mt-2 min-h-11 touch-manipulation rounded-control border border-line px-4 text-sm text-ink"
                 >
                   {t("call.enableAudio")}
@@ -262,7 +266,9 @@ function useIncomingCallAttention(incoming: boolean, incomingTitle: string): voi
     const ringTimer = window.setInterval(() => {
       gain.gain.value = gain.gain.value === 0 ? 0.035 : 0;
     }, 650);
-    void audioContext.resume().catch(() => undefined);
+    void audioContext.resume().catch((error: unknown) => {
+      console.warn("Incoming-call ringtone could not start", { error });
+    });
 
     return () => {
       if (titleTimer !== undefined) window.clearInterval(titleTimer);
@@ -270,7 +276,9 @@ function useIncomingCallAttention(incoming: boolean, incomingTitle: string): voi
       document.title = originalTitle;
       navigator.vibrate?.(0);
       oscillator.stop();
-      void audioContext.close().catch(() => undefined);
+      void audioContext.close().catch((error: unknown) => {
+        console.error("Incoming-call audio context did not close", { error });
+      });
     };
   }, [incoming, incomingTitle]);
 }

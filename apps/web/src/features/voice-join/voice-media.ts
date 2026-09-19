@@ -3,16 +3,15 @@ import {
   VoiceClientEvent,
   type VoiceJoinResponse,
   type VoiceParticipantView,
-  type VoiceProducerView,
 } from "@voreli/shared";
 import type { types } from "mediasoup-client";
 
 import { i18n } from "../../shared/i18n/i18n";
+import { ScreenMedia, type ScreenMediaGraph } from "../screen-share/screen-media";
 import type { OwnUserId } from "./voice-identity";
 import { observeProducerQuality } from "./voice-network-quality";
 import { VoicePlayback } from "./voice-playback";
 import { VoiceRequestError } from "./voice-request-error";
-import { ScreenSharePlayback } from "../screen-share/screen-share-playback";
 import type { VoiceSignaling } from "./voice-signaling";
 import type { VoiceSessionState } from "./voice-state";
 import { createVoiceTransports, type VoiceTransports } from "./voice-transports";
@@ -34,7 +33,7 @@ const MICROPHONE_CODEC_OPTIONS = {
  * created by an incoming producer event needs the current value at a moment when nothing else
  * is on the call stack to pass it in.
  */
-export class VoiceMedia {
+export class VoiceMedia implements ScreenMediaGraph {
   private device: types.Device | undefined;
   private transports: VoiceTransports | undefined;
   private producer: types.Producer | undefined;
@@ -43,7 +42,7 @@ export class VoiceMedia {
   private inputGateOpen = false;
   private networkQuality: "good" | "constrained" | "poor" | "unknown" = "unknown";
   private readonly playback = new VoicePlayback();
-  private readonly screenPlayback = new ScreenSharePlayback();
+  private readonly screen = new ScreenMedia(this);
 
   constructor(
     private readonly signaling: VoiceSignaling,
@@ -140,10 +139,7 @@ export class VoiceMedia {
   }
 
   async useDefaultOutput(): Promise<void> {
-    await Promise.all([
-      this.playback.useDefaultOutput(),
-      this.screenPlayback.setOutputDevice(null),
-    ]);
+    await Promise.all([this.playback.useDefaultOutput(), this.screen.setOutputDevice(null)]);
   }
 
   async setDeafened(deafened: boolean): Promise<void> {
@@ -188,7 +184,7 @@ export class VoiceMedia {
 
   closeReceived(producerId: string): void {
     this.playback.close(producerId);
-    this.screenPlayback.closeProducer(producerId);
+    this.screen.closeProducer(producerId);
   }
 
   close(): void {
@@ -196,7 +192,7 @@ export class VoiceMedia {
     this.transports?.send.close();
     this.transports?.recv.close();
     this.playback.closeAll();
-    this.screenPlayback.close();
+    this.screen.close();
     this.producer = undefined;
     this.transports = undefined;
     this.device = undefined;
@@ -240,6 +236,14 @@ export class VoiceMedia {
     source: "screen-video" | "screen-audio",
     screenStreamId: string,
   ): Promise<types.Producer> {
+    return this.screen.produce(track, source, screenStreamId);
+  }
+
+  async createScreenProducer(
+    track: MediaStreamTrack,
+    source: "screen-video" | "screen-audio",
+    screenStreamId: string,
+  ): Promise<types.Producer> {
     if (!this.transports) throw new Error(i18n.t("voice.errors.transportsNotReady"));
     return this.transports.send.produce({
       track,
@@ -258,47 +262,38 @@ export class VoiceMedia {
     });
   }
 
-  async watchScreen(producers: readonly VoiceProducerView[]): Promise<boolean> {
-    const consumers: types.Consumer[] = [];
-    try {
-      for (const producer of producers)
-        consumers.push(await this.createConsumer(producer.producerId));
-      const audioStarted = await this.screenPlayback.replace(consumers);
-      await Promise.all(
-        consumers.map((consumer) =>
-          this.signaling.request<null>(VoiceClientEvent.ResumeConsumer, {
-            consumerId: consumer.id,
-          }),
-        ),
-      );
-      return audioStarted;
-    } catch (error: unknown) {
-      consumers.forEach((consumer) => consumer.close());
-      this.screenPlayback.close();
-      throw error;
-    }
+  watchScreen(producers: Parameters<ScreenMedia["watch"]>[0]): Promise<boolean> {
+    return this.screen.watch(producers);
   }
 
   attachScreenVideo(element: HTMLVideoElement | null): Promise<void> {
-    return this.screenPlayback.attachVideo(element);
+    return this.screen.attachVideo(element);
   }
 
   closeScreen(): void {
-    this.screenPlayback.close();
+    this.screen.close();
   }
 
   resumeScreenAudio(): Promise<void> {
-    return this.screenPlayback.resumeAudio();
+    return this.screen.resumeAudio();
   }
 
   retainScreenProducers(producerIds: ReadonlySet<string>): void {
-    this.screenPlayback.retain(producerIds);
+    this.screen.retain(producerIds);
   }
 
   private async chooseOutputForAll(preferredDeviceId: string | null): Promise<string | null> {
     const selected = await this.playback.chooseOutput(preferredDeviceId);
-    await this.screenPlayback.setOutputDevice(selected);
+    await this.screen.setOutputDevice(selected);
     return selected;
+  }
+
+  createScreenConsumer(producerId: string): Promise<types.Consumer> {
+    return this.createConsumer(producerId);
+  }
+
+  resumeScreenConsumer(consumerId: string): Promise<null> {
+    return this.signaling.request<null>(VoiceClientEvent.ResumeConsumer, { consumerId });
   }
 
   private async createConsumer(producerId: string): Promise<types.Consumer> {

@@ -40,7 +40,11 @@ export function VoiceControls({ own }: { readonly own: VoiceParticipantView | un
         />
         <button
           type="button"
-          onClick={() => void voiceSession.leave().catch(() => undefined)}
+          onClick={() =>
+            void voiceSession.leave().catch((error: unknown) => {
+              console.error("Failed to leave the voice room", { error });
+            })
+          }
           aria-label={t("voice.leave")}
           className="ml-2 grid h-11 w-11 place-items-center rounded-xl bg-danger text-white transition hover:bg-danger-hover"
         >

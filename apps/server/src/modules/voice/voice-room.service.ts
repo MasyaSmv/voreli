@@ -5,22 +5,19 @@ import type { VoiceJoinResponse, VoiceParticipantView } from "@voreli/shared";
 import { CLOCK, type Clock } from "../../common/services/clock.js";
 import { ID_GENERATOR, type IdGenerator } from "../../common/services/id-generator.js";
 import type { EnvironmentVariables } from "../../config/env.validation.js";
-import { RouterRegistryService } from "../../media/router-registry.service.js";
 import {
   VoiceChannelFullError,
   VoiceRoomOnAnotherInstanceError,
   VoiceSessionEvictingError,
 } from "./errors/voice-room-errors.js";
-import { MediaSessionRegistry } from "./media-session.registry.js";
 import {
   VOICE_STATE_REPOSITORY,
   type VoiceParticipantState,
   type VoiceStateRepository,
 } from "./voice-state.repository.js";
 import { MediaRoomAccessService } from "./media-room-access.service.js";
-import { SpeakingService } from "./speaking.service.js";
 import { VoiceRoomNotifier } from "./voice-room-notifier.js";
-import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
+import { VoiceLocalMediaService } from "./voice-local-media.service.js";
 
 @Injectable()
 export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
@@ -37,22 +34,19 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
     @Inject(CLOCK) private readonly clock: Clock,
     private readonly config: ConfigService<EnvironmentVariables, true>,
-    private readonly routers: RouterRegistryService,
-    private readonly media: MediaSessionRegistry,
+    private readonly localMedia: VoiceLocalMediaService,
     private readonly access: MediaRoomAccessService,
     private readonly notifier: VoiceRoomNotifier,
-    private readonly speaking: SpeakingService,
-    private readonly screenShares: ScreenShareLifecycleService,
   ) {
     this.instanceId = config.get("INSTANCE_ID", { infer: true });
     this.graceMs = config.get("VOICE_RECONNECT_GRACE", { infer: true }) * 1_000;
   }
 
   onModuleInit(): void {
-    this.unsubscribeTransportFailure = this.media.onTransportFailure((sessionId) =>
+    this.unsubscribeTransportFailure = this.localMedia.onTransportFailure((sessionId) =>
       this.leaveSession(sessionId),
     );
-    this.unsubscribeTransportReconnect = this.media.onTransportReconnect(
+    this.unsubscribeTransportReconnect = this.localMedia.onTransportReconnect(
       (sessionId, reconnecting) =>
         this.setSessionReconnectSource(sessionId, "transport", reconnecting),
     );
@@ -75,7 +69,7 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
     resumeSessionId?: string,
   ): Promise<VoiceJoinResponse> {
     await this.access.assertConnect(userId, authenticationSessionId, channelId);
-    const handle = await this.routers.acquire(channelId);
+    const handle = await this.localMedia.acquire(channelId);
     let retained = false;
 
     try {
@@ -112,7 +106,7 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
       if (result.kind === "resumed") {
         this.cancelGrace(result.participant.sessionId);
 
-        if (!this.media.has(result.participant.sessionId)) {
+        if (!this.localMedia.has(result.participant.sessionId)) {
           await this.state.leave(
             channelId,
             userId,
@@ -128,7 +122,7 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
           await this.closeOwnedMediaSession(channelId, result.displaced.sessionId);
           this.sessionOwners.delete(result.displaced.sessionId);
         }
-        this.media.register(result.participant.sessionId, channelId, handle);
+        this.localMedia.register(result.participant.sessionId, channelId, handle);
         this.sessionOwners.set(result.participant.sessionId, { userId, channelId });
         retained = true;
       }
@@ -149,10 +143,10 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
         resumed: result.kind === "resumed",
         rtpCapabilities: handle.router.rtpCapabilities,
         participants,
-        screenShares: await this.screenShares.activeIn(channelId),
+        screenShares: await this.localMedia.activeScreenShares(channelId),
       };
     } finally {
-      if (!retained) this.routers.release(channelId);
+      if (!retained) this.localMedia.release(channelId);
     }
   }
 
@@ -197,6 +191,10 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
 
   async hasParticipants(channelId: string): Promise<boolean> {
     return (await this.state.participants(channelId)).length > 0;
+  }
+
+  async touchPresence(userId: string): Promise<void> {
+    await this.state.touch(userId);
   }
 
   async disconnect(userId: string, socketId: string): Promise<void> {
@@ -260,18 +258,10 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async closeOwnedMediaSession(channelId: string, sessionId: string): Promise<void> {
-    await this.screenShares.stopForSession(sessionId, "left");
-    const producers = this.media.closeSession(sessionId);
-    if (producers === null) return;
-    await Promise.all(
-      producers
-        .filter((producer) => producer.source === "microphone")
-        .map((producer) => this.speaking.removeProducer(channelId, producer.producerId)),
-    );
+    if (!(await this.localMedia.close(channelId, sessionId))) return;
     this.reconnectSources.delete(
       this.reconnectKey(channelId, this.sessionOwners.get(sessionId)?.userId ?? ""),
     );
-    this.routers.release(channelId);
   }
 
   private async setSessionReconnectSource(
@@ -318,8 +308,8 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
       selfDeafened: participant.selfDeafened,
       moderatorMuted: participant.moderatorMuted,
       moderatorDeafened: participant.moderatorDeafened,
-      producers: this.media.has(participant.sessionId)
-        ? this.media.producersOfSession(participant.sessionId)
+      producers: this.localMedia.has(participant.sessionId)
+        ? this.localMedia.producers(participant.sessionId)
         : [],
     };
   }

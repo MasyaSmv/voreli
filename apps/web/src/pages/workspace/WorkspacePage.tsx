@@ -83,7 +83,9 @@ export function WorkspacePage() {
           onLogout={() =>
             void voiceSession
               .leave()
-              .catch(() => undefined)
+              .catch((error: unknown) => {
+                console.error("Failed to leave voice before logout", { error });
+              })
               .then(() => logOut())
           }
         />
