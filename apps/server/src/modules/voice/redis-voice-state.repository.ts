@@ -1,6 +1,7 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { RedisClientType } from "redis";
+import type { ScreenShareView } from "@voreli/shared";
 
 import type { EnvironmentVariables } from "../../config/env.validation.js";
 import { RedisClientFactory } from "../../infra/redis/redis-client.factory.js";
@@ -20,6 +21,7 @@ if owner and owner ~= ARGV[1] then return owner end
 redis.call('HSET', KEYS[1], 'instanceId', ARGV[1], 'routerId', ARGV[2], 'createdAt', ARGV[3])
 redis.call('EXPIRE', KEYS[1], ARGV[4])
 redis.call('EXPIRE', KEYS[2], ARGV[4])
+redis.call('EXPIRE', KEYS[2] .. ':screens', ARGV[4])
 return ARGV[1]
 `;
 
@@ -45,6 +47,7 @@ if existing and ARGV[3] ~= '' and existing.sessionId == ARGV[3] and existing.aut
   redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[7])
   redis.call('EXPIRE', KEYS[2], ARGV[7])
   redis.call('EXPIRE', KEYS[3], ARGV[7])
+  redis.call('EXPIRE', KEYS[2] .. ':screens', ARGV[7])
   return {'RESUMED', resumed}
 end
 
@@ -60,6 +63,7 @@ redis.call('HSET', KEYS[2], ARGV[1], joined)
 redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[7])
 redis.call('EXPIRE', KEYS[2], ARGV[7])
 redis.call('EXPIRE', KEYS[3], ARGV[7])
+redis.call('EXPIRE', KEYS[2] .. ':screens', ARGV[7])
 return {'JOINED', joined, serialized or ''}
 `;
 
@@ -75,6 +79,7 @@ redis.call('HSET', KEYS[1], ARGV[1], updated)
 redis.call('EXPIRE', KEYS[1], ARGV[4])
 redis.call('EXPIRE', KEYS[2], ARGV[4])
 redis.call('EXPIRE', KEYS[3], ARGV[4])
+redis.call('EXPIRE', KEYS[1] .. ':screens', ARGV[4])
 return updated
 `;
 
@@ -108,6 +113,7 @@ if redis.call('HEXISTS', room, ARGV[1]) == 0 then redis.call('DEL', KEYS[1]); re
 redis.call('EXPIRE', KEYS[1], ARGV[2])
 redis.call('EXPIRE', room, ARGV[2])
 redis.call('EXPIRE', meta, ARGV[2])
+redis.call('EXPIRE', room .. ':screens', ARGV[2])
 return 1
 `;
 
@@ -126,6 +132,7 @@ redis.call('HSET', KEYS[1], ARGV[1], updated)
 redis.call('EXPIRE', KEYS[1], ARGV[#ARGV])
 redis.call('EXPIRE', KEYS[2], ARGV[#ARGV])
 redis.call('EXPIRE', KEYS[3], ARGV[#ARGV])
+redis.call('EXPIRE', KEYS[1] .. ':screens', ARGV[#ARGV])
 return updated
 `;
 
@@ -148,7 +155,7 @@ for _, userId in ipairs(users) do
   local user = 'voice:user:' .. userId
   if redis.call('GET', user) == ARGV[2] then redis.call('DEL', user) end
 end
-redis.call('DEL', KEYS[1], KEYS[2])
+redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
 return 1
 `;
 
@@ -158,6 +165,10 @@ function roomKey(channelId: string): string {
 
 function metaKey(channelId: string): string {
   return `${roomKey(channelId)}:meta`;
+}
+
+function screenSharesKey(channelId: string): string {
+  return `${roomKey(channelId)}:screens`;
 }
 
 function userKey(userId: string): string {
@@ -179,6 +190,18 @@ function parseParticipant(serialized: string): VoiceParticipantState {
     moderatorDeafened: parsed["moderatorDeafened"] === true,
     joinedAt: String(parsed["joinedAt"]),
     disconnectedAt: typeof parsed["disconnectedAt"] === "string" ? parsed["disconnectedAt"] : null,
+  };
+}
+
+function parseScreenShare(serialized: string): ScreenShareView {
+  const parsed = JSON.parse(serialized) as Record<string, unknown>;
+  return {
+    id: String(parsed["id"]),
+    mediaRoomId: String(parsed["mediaRoomId"]),
+    userId: String(parsed["userId"]),
+    videoProducerId: String(parsed["videoProducerId"]),
+    audioProducerId:
+      typeof parsed["audioProducerId"] === "string" ? parsed["audioProducerId"] : null,
   };
 }
 
@@ -288,6 +311,25 @@ export class RedisVoiceStateRepository
 
   async participants(channelId: string): Promise<readonly VoiceParticipantState[]> {
     return Object.values(await this.redis.hGetAll(roomKey(channelId))).map(parseParticipant);
+  }
+
+  async screenShares(channelId: string): Promise<readonly ScreenShareView[]> {
+    return Object.values(await this.redis.hGetAll(screenSharesKey(channelId))).map(
+      parseScreenShare,
+    );
+  }
+
+  async saveScreenShare(screenShare: ScreenShareView): Promise<void> {
+    const key = screenSharesKey(screenShare.mediaRoomId);
+    await this.redis
+      .multi()
+      .hSet(key, screenShare.id, JSON.stringify(screenShare))
+      .expire(key, this.ttlSeconds)
+      .exec();
+  }
+
+  async removeScreenShare(channelId: string, screenStreamId: string): Promise<void> {
+    await this.redis.hDel(screenSharesKey(channelId), screenStreamId);
   }
 
   async disconnect(
@@ -403,7 +445,7 @@ export class RedisVoiceStateRepository
         const channelId = room.slice("voice:channel:".length);
         removed += Number(
           await this.redis.eval(CLEAN_ROOM_SCRIPT, {
-            keys: [meta, room],
+            keys: [meta, room, screenSharesKey(channelId)],
             arguments: [instanceId, channelId],
           }),
         );

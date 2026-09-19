@@ -2,17 +2,21 @@ import {
   hasPermission,
   parsePermissions,
   Permission,
+  type ScreenShareView,
   type VoiceParticipantView,
 } from "@voreli/shared";
 import { useTranslation } from "react-i18next";
 
 import { voiceSession } from "../../features/voice-join/voice-session";
+import { useVoice } from "../../entities/voice/voice.store";
 import { Avatar } from "../../shared/ui/Avatar";
 import { VoiceControls } from "./VoiceControls";
+import { ScreenShareStage } from "./ScreenShareStage";
 
 interface VoiceRoomProps {
   readonly participants: readonly VoiceParticipantView[];
   readonly speakingUserIds: ReadonlySet<string>;
+  readonly screenShares: readonly ScreenShareView[];
   readonly currentUserId: string | undefined;
   readonly currentUserName: string | undefined;
   readonly own: VoiceParticipantView | undefined;
@@ -23,6 +27,7 @@ interface VoiceRoomProps {
 export function VoiceRoom({
   participants,
   speakingUserIds,
+  screenShares,
   currentUserId,
   currentUserName,
   own,
@@ -33,6 +38,12 @@ export function VoiceRoom({
   const permissionMask = parsePermissions(permissions);
   const canMute = hasPermission(permissionMask, Permission.MuteMembers);
   const canDeafen = hasPermission(permissionMask, Permission.DeafenMembers);
+  const canShareScreen = hasPermission(permissionMask, Permission.ShareScreen);
+  const ownShare = screenShares.find((screenShare) => screenShare.userId === currentUserId);
+  const selectedScreenShareId = useVoice((state) => state.selectedScreenShareId);
+  const selectedScreenShare = screenShares.find(
+    (screenShare) => screenShare.id === selectedScreenShareId,
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -47,18 +58,36 @@ export function VoiceRoom({
                 {t("voice.participantCount", { count: participants.length })}
               </h2>
             </div>
-            <button
-              type="button"
-              disabled={!own || own.selfMuted}
-              onClick={() =>
-                void voiceSession.startEcho().catch((error: unknown) => {
-                  console.error("Failed to start the voice echo test", { error });
-                })
-              }
-              className="rounded-lg border border-line px-3 py-2 text-xs font-semibold text-muted transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
-            >
-              {t("voice.echo")}
-            </button>
+            <div className="flex gap-2">
+              {canShareScreen ? (
+                <button
+                  type="button"
+                  disabled={!own}
+                  onClick={() =>
+                    void (
+                      ownShare ? voiceSession.stopScreenShare() : voiceSession.startScreenShare()
+                    ).catch((error: unknown) => {
+                      console.error("Failed to toggle screen sharing", { error });
+                    })
+                  }
+                  className="rounded-lg border border-line px-3 py-2 text-xs font-semibold text-muted transition hover:border-line-strong hover:text-ink"
+                >
+                  {ownShare ? t("voice.screen.stop") : t("voice.screen.start")}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={!own || own.selfMuted}
+                onClick={() =>
+                  void voiceSession.startEcho().catch((error: unknown) => {
+                    console.error("Failed to start the voice echo test", { error });
+                  })
+                }
+                className="rounded-lg border border-line px-3 py-2 text-xs font-semibold text-muted transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                {t("voice.echo")}
+              </button>
+            </div>
           </div>
 
           <ul className="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-3">
@@ -143,6 +172,47 @@ export function VoiceRoom({
               );
             })}
           </ul>
+          {screenShares.length === 0 ? null : (
+            <div className="mt-4 rounded-2xl border border-line bg-panel p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-faint">
+                {t("voice.screen.available")}
+              </p>
+              <ul className="mt-2 space-y-2">
+                {screenShares.map((screenShare) => (
+                  <li key={screenShare.id} className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-ink-soft">
+                      {screenShare.userId === currentUserId
+                        ? t("voice.screen.yours")
+                        : t("voice.screen.participant", {
+                            id: screenShare.userId.slice(0, 6),
+                          })}
+                      {screenShare.audioProducerId === null
+                        ? ` · ${t("voice.screen.audioUnavailable")}`
+                        : null}
+                    </span>
+                    {screenShare.userId === currentUserId ? null : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void voiceSession
+                            .watchScreenShare(screenShare)
+                            .catch((error: unknown) => {
+                              console.error("Failed to watch screen share", { error });
+                            })
+                        }
+                        className="rounded-lg border border-line px-3 py-2 text-xs font-semibold text-muted transition hover:border-line-strong hover:text-ink"
+                      >
+                        {selectedScreenShareId === screenShare.id
+                          ? t("voice.screen.watching")
+                          : t("voice.screen.watch")}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {selectedScreenShare ? <ScreenShareStage screenShare={selectedScreenShare} /> : null}
         </div>
       </div>
 

@@ -115,7 +115,14 @@ describe("bindVoiceServerEvents", () => {
     media = new RecordingMedia();
     speaking = new RecordingSpeakers();
     lifecycle = new RecordingLifecycle();
-    bindVoiceServerEvents(signaling, { state, media, speaking, lifecycle });
+    bindVoiceServerEvents(signaling, {
+      state,
+      media,
+      speaking,
+      screenViewing: { updated: () => undefined, stopped: () => undefined },
+      screenPublishing: { stopped: () => undefined },
+      lifecycle,
+    });
   });
 
   afterEach(() => {

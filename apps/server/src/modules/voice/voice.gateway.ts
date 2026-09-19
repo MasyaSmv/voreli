@@ -50,9 +50,11 @@ import {
   StartScreenShareDto,
   ScreenShareDto,
   ScreenShareLayerDto,
+  ScreenShareVisibilityDto,
 } from "./dto/screen-share.dto.js";
 import { VoiceMediaSessionContextService } from "./voice-media-session-context.service.js";
 import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
+import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
 
 @WebSocketGateway({ namespace: VOICE_NAMESPACE })
 @UseInterceptors(WsRateLimitInterceptor)
@@ -73,6 +75,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     private readonly controls: VoiceParticipantControlService,
     private readonly contexts: VoiceMediaSessionContextService,
     private readonly screenShares: ScreenShareLifecycleService,
+    private readonly screenViewing: ScreenShareViewingService,
   ) {
     super(authentication, events);
   }
@@ -292,7 +295,7 @@ export class VoiceGateway extends AuthenticatedGateway {
       return {
         ok: true,
         data: {
-          screenShare: this.screenShares.start(
+          screenShare: await this.screenShares.start(
             identity.user.id,
             context,
             command.videoProducerId,
@@ -318,7 +321,27 @@ export class VoiceGateway extends AuthenticatedGateway {
           message: "Voice session does not exist",
         };
       }
-      this.screenShares.stop(identity.user.id, context, command.screenStreamId);
+      await this.screenShares.stop(identity.user.id, context, command.screenStreamId);
+      return { ok: true, data: null };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenAbort)
+  async abortScreenShare(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      if (context.mediaRoomId !== command.mediaRoomId) {
+        return {
+          ok: false,
+          errorCode: "VOICE_SESSION_NOT_FOUND",
+          message: "Voice session does not exist",
+        };
+      }
+      this.screenShares.abort(identity.user.id, context, command.screenStreamId);
       return { ok: true, data: null };
     });
   }
@@ -331,12 +354,38 @@ export class VoiceGateway extends AuthenticatedGateway {
     return this.guarded(socket, async (identity) => {
       const command = validateSocketPayload(ScreenShareDto, payload);
       const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      const producers = this.screenShares.producersFor(
+        context,
+        command.mediaRoomId,
+        command.screenStreamId,
+      );
+      this.screenViewing.watch(context, command.screenStreamId, producers);
       return {
         ok: true,
         data: {
-          producers: this.screenShares.watch(context, command.mediaRoomId, command.screenStreamId),
+          producers,
         },
       };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenAudioStop)
+  async stopScreenShareAudio(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      if (context.mediaRoomId !== command.mediaRoomId) {
+        return {
+          ok: false,
+          errorCode: "VOICE_SESSION_NOT_FOUND",
+          message: "Voice session does not exist",
+        };
+      }
+      await this.screenShares.stopAudio(identity.user.id, context, command.screenStreamId);
+      return { ok: true, data: null };
     });
   }
 
@@ -348,7 +397,7 @@ export class VoiceGateway extends AuthenticatedGateway {
     return this.guarded(socket, async (identity) => {
       const command = validateSocketPayload(ScreenShareDto, payload);
       const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
-      this.screenShares.unwatch(context, command.mediaRoomId, command.screenStreamId);
+      this.screenViewing.unwatch(context, command.mediaRoomId, command.screenStreamId);
       return { ok: true, data: null };
     });
   }
@@ -361,11 +410,29 @@ export class VoiceGateway extends AuthenticatedGateway {
     return this.guarded(socket, async (identity) => {
       const command = validateSocketPayload(ScreenShareLayerDto, payload);
       const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
-      await this.screenShares.setLayer(
+      await this.screenViewing.setLayer(
         context,
         command.mediaRoomId,
         command.screenStreamId,
         command.spatialLayer,
+      );
+      return { ok: true, data: null };
+    });
+  }
+
+  @SubscribeMessage(VoiceClientEvent.ScreenVisibility)
+  async setScreenShareVisibility(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      const command = validateSocketPayload(ScreenShareVisibilityDto, payload);
+      const context = await this.contexts.resolve(identity.user.id, identity.sessionId);
+      await this.screenViewing.setVisible(
+        context,
+        command.mediaRoomId,
+        command.screenStreamId,
+        command.visible,
       );
       return { ok: true, data: null };
     });

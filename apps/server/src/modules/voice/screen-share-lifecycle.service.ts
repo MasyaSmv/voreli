@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
   callIdFromMediaRoom,
   type CreateProducerPayload,
@@ -12,6 +12,8 @@ import { MediaSessionRegistry } from "./media-session.registry.js";
 import { VoiceBroadcaster } from "./voice-broadcaster.js";
 import { VoiceChannelAccessService } from "./voice-channel-access.service.js";
 import type { VoiceMediaSessionContext } from "./voice-media-session-context.service.js";
+import { VOICE_STATE_REPOSITORY, type VoiceStateRepository } from "./voice-state.repository.js";
+import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
 
 interface PendingScreenShare {
   readonly id: string;
@@ -28,13 +30,18 @@ export class ScreenShareLifecycleService {
   private readonly pendingBySession = new Map<string, PendingScreenShare>();
   private readonly activeById = new Map<string, ScreenShareView & { readonly sessionId: string }>();
   private readonly stopping = new Set<string>();
-  private readonly watchedBySession = new Map<string, string>();
 
   constructor(
     private readonly media: MediaSessionRegistry,
     private readonly access: VoiceChannelAccessService,
     private readonly broadcaster: VoiceBroadcaster,
+    @Inject(VOICE_STATE_REPOSITORY) private readonly state: VoiceStateRepository,
+    private readonly viewing: ScreenShareViewingService,
   ) {}
+
+  activeIn(mediaRoomId: string): Promise<readonly ScreenShareView[]> {
+    return this.state.screenShares(mediaRoomId);
+  }
 
   async createProducer(
     userId: string,
@@ -52,6 +59,13 @@ export class ScreenShareLifecycleService {
 
     let pending = this.pendingBySession.get(context.participant.sessionId);
     if (payload.source === "screen-video") {
+      if (
+        [...this.activeById.values()].some(
+          (screenShare) => screenShare.sessionId === context.participant.sessionId,
+        )
+      ) {
+        throw new ScreenShareStateError("A participant can share only one screen at a time");
+      }
       if (pending && pending.id !== streamId) throw new ScreenShareStateError();
       pending ??= {
         id: streamId,
@@ -85,16 +99,25 @@ export class ScreenShareLifecycleService {
     }
     if (payload.source === "screen-video") pending.videoProducerId = producer.id;
     else pending.audioProducerId = producer.id;
-    producer.observer.once("close", () => this.handleProducerClosed(streamId, producer.id));
+    producer.observer.once("close", () => {
+      void this.handleProducerClosed(streamId, producer.id).catch((error: unknown) =>
+        this.logger.error({
+          message: "Failed to reconcile a closed screen producer",
+          error,
+          screenStreamId: streamId,
+          producerId: producer.id,
+        }),
+      );
+    });
     return producer;
   }
 
-  start(
+  async start(
     userId: string,
     context: VoiceMediaSessionContext,
     videoProducerId: string,
     audioProducerId?: string,
-  ): ScreenShareView {
+  ): Promise<ScreenShareView> {
     const pending = this.pendingBySession.get(context.participant.sessionId);
     if (
       !pending ||
@@ -115,20 +138,89 @@ export class ScreenShareLifecycleService {
     };
     this.pendingBySession.delete(pending.sessionId);
     this.activeById.set(view.id, view);
+    try {
+      await this.state.saveScreenShare(view);
+    } catch (error: unknown) {
+      this.activeById.delete(view.id);
+      this.stopping.add(view.id);
+      try {
+        this.closeProducerIfPresent(view.sessionId, view.audioProducerId);
+        this.closeProducerIfPresent(view.sessionId, view.videoProducerId);
+      } finally {
+        this.stopping.delete(view.id);
+      }
+      throw error;
+    }
     this.broadcaster.screenStarted(view.mediaRoomId, view);
     return view;
   }
 
-  stop(userId: string, context: VoiceMediaSessionContext, screenStreamId: string): void {
+  async stop(
+    userId: string,
+    context: VoiceMediaSessionContext,
+    screenStreamId: string,
+  ): Promise<void> {
     const active = this.activeById.get(screenStreamId);
     if (!active || active.userId !== userId || active.sessionId !== context.participant.sessionId) {
       throw new ScreenShareStateError();
     }
-    this.stopActive(active, "stopped");
+    await this.stopActive(active, "stopped");
   }
 
-  stopForSession(sessionId: string, reason: "left" | "permission-revoked" | "failed"): void {
-    this.watchedBySession.delete(sessionId);
+  abort(userId: string, context: VoiceMediaSessionContext, screenStreamId: string): void {
+    const pending = this.pendingBySession.get(context.participant.sessionId);
+    if (
+      !pending ||
+      pending.id !== screenStreamId ||
+      pending.userId !== userId ||
+      pending.mediaRoomId !== context.mediaRoomId
+    ) {
+      throw new ScreenShareStateError();
+    }
+    this.pendingBySession.delete(pending.sessionId);
+    this.stopping.add(pending.id);
+    try {
+      this.closeProducerIfPresent(pending.sessionId, pending.audioProducerId);
+      this.closeProducerIfPresent(pending.sessionId, pending.videoProducerId);
+    } finally {
+      this.stopping.delete(pending.id);
+    }
+  }
+
+  async stopAudio(
+    userId: string,
+    context: VoiceMediaSessionContext,
+    screenStreamId: string,
+  ): Promise<void> {
+    const active = this.activeById.get(screenStreamId);
+    if (
+      !active ||
+      active.userId !== userId ||
+      active.sessionId !== context.participant.sessionId ||
+      active.audioProducerId === null
+    ) {
+      throw new ScreenShareStateError();
+    }
+    const updated = { ...active, audioProducerId: null };
+    this.activeById.set(screenStreamId, updated);
+    this.stopping.add(screenStreamId);
+    try {
+      this.closeProducerIfPresent(active.sessionId, active.audioProducerId);
+    } finally {
+      this.stopping.delete(screenStreamId);
+    }
+    try {
+      await this.state.saveScreenShare(updated);
+    } finally {
+      this.broadcaster.screenUpdated(active.mediaRoomId, updated);
+    }
+  }
+
+  async stopForSession(
+    sessionId: string,
+    reason: "left" | "permission-revoked" | "failed",
+  ): Promise<void> {
+    this.viewing.stopSession(sessionId);
     const pending = this.pendingBySession.get(sessionId);
     if (pending) {
       this.pendingBySession.delete(sessionId);
@@ -136,21 +228,21 @@ export class ScreenShareLifecycleService {
       this.closeProducerIfPresent(sessionId, pending.videoProducerId);
     }
     const active = [...this.activeById.values()].find((share) => share.sessionId === sessionId);
-    if (active) this.stopActive(active, reason);
+    if (active) await this.stopActive(active, reason);
   }
 
-  stopForUser(userId: string, mediaRoomId: string): void {
+  async stopForUser(userId: string, mediaRoomId: string): Promise<void> {
     const pending = [...this.pendingBySession.values()].find(
       (share) => share.userId === userId && share.mediaRoomId === mediaRoomId,
     );
     const active = [...this.activeById.values()].find(
       (share) => share.userId === userId && share.mediaRoomId === mediaRoomId,
     );
-    if (pending) this.stopForSession(pending.sessionId, "permission-revoked");
-    else if (active) this.stopForSession(active.sessionId, "permission-revoked");
+    if (pending) await this.stopForSession(pending.sessionId, "permission-revoked");
+    else if (active) await this.stopForSession(active.sessionId, "permission-revoked");
   }
 
-  watch(
+  producersFor(
     context: VoiceMediaSessionContext,
     requestedMediaRoomId: string,
     screenStreamId: string,
@@ -163,70 +255,23 @@ export class ScreenShareLifecycleService {
     ) {
       throw new ScreenShareStateError();
     }
-    const previous = this.watchedBySession.get(context.participant.sessionId);
-    if (previous && previous !== screenStreamId) {
-      this.unwatch(context, context.mediaRoomId, previous);
-    }
-    this.watchedBySession.set(context.participant.sessionId, screenStreamId);
     return this.producers(active);
   }
 
-  unwatch(
-    context: VoiceMediaSessionContext,
-    requestedMediaRoomId: string,
-    screenStreamId: string,
-  ): void {
-    if (requestedMediaRoomId !== context.mediaRoomId) throw new ScreenShareStateError();
-    if (this.watchedBySession.get(context.participant.sessionId) !== screenStreamId) return;
-    const active = this.activeById.get(screenStreamId);
-    this.watchedBySession.delete(context.participant.sessionId);
-    if (active) {
-      this.media.closeConsumersForProducers(
-        context.participant.sessionId,
-        new Set(this.producers(active).map((producer) => producer.producerId)),
-      );
-    }
-  }
-
-  canConsume(sessionId: string, producerId: string): boolean {
-    const screenStreamId = this.watchedBySession.get(sessionId);
-    const active = screenStreamId ? this.activeById.get(screenStreamId) : undefined;
-    return active
-      ? this.producers(active).some((producer) => producer.producerId === producerId)
-      : false;
-  }
-
-  async setLayer(
-    context: VoiceMediaSessionContext,
-    requestedMediaRoomId: string,
-    screenStreamId: string,
-    spatialLayer: 0 | 1 | 2,
-  ): Promise<void> {
-    if (
-      requestedMediaRoomId !== context.mediaRoomId ||
-      this.watchedBySession.get(context.participant.sessionId) !== screenStreamId
-    ) {
-      throw new ScreenShareStateError();
-    }
-    const active = this.activeById.get(screenStreamId);
-    if (!active) throw new ScreenShareStateError();
-    await this.media.setPreferredScreenLayer(
-      context.participant.sessionId,
-      new Set(this.producers(active).map((producer) => producer.producerId)),
-      spatialLayer,
-    );
-  }
-
-  private handleProducerClosed(screenStreamId: string, producerId: string): void {
+  private async handleProducerClosed(screenStreamId: string, producerId: string): Promise<void> {
     if (this.stopping.has(screenStreamId)) return;
     const active = this.activeById.get(screenStreamId);
     if (active) {
       if (producerId === active.audioProducerId) {
         const updated = { ...active, audioProducerId: null };
         this.activeById.set(screenStreamId, updated);
-        this.broadcaster.screenUpdated(active.mediaRoomId, updated);
+        try {
+          await this.state.saveScreenShare(updated);
+        } finally {
+          this.broadcaster.screenUpdated(active.mediaRoomId, updated);
+        }
       } else {
-        this.stopActive(active, "track-ended");
+        await this.stopActive(active, "track-ended");
       }
       return;
     }
@@ -243,19 +288,28 @@ export class ScreenShareLifecycleService {
     }
   }
 
-  private stopActive(
+  private async stopActive(
     active: ScreenShareView & { readonly sessionId: string },
     reason: "stopped" | "track-ended" | "left" | "permission-revoked" | "failed",
-  ): void {
+  ): Promise<void> {
     this.stopping.add(active.id);
     this.activeById.delete(active.id);
-    for (const [sessionId, watched] of this.watchedBySession) {
-      if (watched === active.id) this.watchedBySession.delete(sessionId);
-    }
+    this.viewing.stopShare(active.id);
+    let persistenceError: unknown;
     try {
+      try {
+        await this.state.removeScreenShare(active.mediaRoomId, active.id);
+      } catch (error: unknown) {
+        persistenceError = error;
+      }
       this.closeProducerIfPresent(active.sessionId, active.audioProducerId);
       this.closeProducerIfPresent(active.sessionId, active.videoProducerId);
       this.broadcaster.screenStopped(active.mediaRoomId, active.id, reason);
+      if (persistenceError) {
+        throw persistenceError instanceof Error
+          ? persistenceError
+          : new Error("Failed to remove persisted screen share", { cause: persistenceError });
+      }
     } catch (error: unknown) {
       this.logger.error({
         message: "Failed to stop screen share",

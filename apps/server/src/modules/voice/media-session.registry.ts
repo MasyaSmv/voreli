@@ -265,6 +265,23 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     );
   }
 
+  async setScreenConsumersPaused(
+    sessionId: string,
+    producerIds: ReadonlySet<string>,
+    paused: boolean,
+  ): Promise<void> {
+    await Promise.all(
+      [...this.session(sessionId).consumers.values()]
+        .filter(
+          (owned) =>
+            producerIds.has(owned.producerId) &&
+            owned.consumer.kind === "video" &&
+            (paused || owned.clientReady),
+        )
+        .map((owned) => (paused ? owned.consumer.pause() : owned.consumer.resume())),
+    );
+  }
+
   async setProducerPaused(sessionId: string, paused: boolean): Promise<void> {
     await Promise.all(
       [...this.session(sessionId).producers.values()].map((producer) =>

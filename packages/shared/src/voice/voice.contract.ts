@@ -14,10 +14,13 @@ export const VoiceClientEvent = {
   SetSelfState: "voice:self-state",
   SetModeratorState: "voice:moderator-state",
   ScreenStart: "voice:screen-start",
+  ScreenAbort: "voice:screen-abort",
   ScreenStop: "voice:screen-stop",
+  ScreenAudioStop: "voice:screen-audio-stop",
   ScreenWatch: "voice:screen-watch",
   ScreenUnwatch: "voice:screen-unwatch",
   ScreenLayer: "voice:screen-layer",
+  ScreenVisibility: "voice:screen-visibility",
   RefreshAuth: "auth:refresh",
 } as const;
 
@@ -73,6 +76,7 @@ export interface VoiceJoinResponse {
   readonly resumed: boolean;
   readonly rtpCapabilities: types.RtpCapabilities;
   readonly participants: readonly VoiceParticipantView[];
+  readonly screenShares: readonly ScreenShareView[];
 }
 
 export interface CreateTransportPayload {
@@ -185,6 +189,10 @@ export interface ScreenSharePayload {
 
 export interface ScreenShareLayerPayload extends ScreenSharePayload {
   readonly spatialLayer: 0 | 1 | 2;
+}
+
+export interface ScreenShareVisibilityPayload extends ScreenSharePayload {
+  readonly visible: boolean;
 }
 
 export interface ScreenShareResponse {

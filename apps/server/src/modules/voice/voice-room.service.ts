@@ -149,6 +149,7 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
         resumed: result.kind === "resumed",
         rtpCapabilities: handle.router.rtpCapabilities,
         participants,
+        screenShares: await this.screenShares.activeIn(channelId),
       };
     } finally {
       if (!retained) this.routers.release(channelId);
@@ -259,7 +260,7 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async closeOwnedMediaSession(channelId: string, sessionId: string): Promise<void> {
-    this.screenShares.stopForSession(sessionId, "left");
+    await this.screenShares.stopForSession(sessionId, "left");
     const producers = this.media.closeSession(sessionId);
     if (producers === null) return;
     await Promise.all(

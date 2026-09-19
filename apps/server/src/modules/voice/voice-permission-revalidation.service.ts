@@ -70,7 +70,7 @@ export class VoicePermissionRevalidationService implements OnModuleInit, OnModul
       await this.signaling.closeProducersForUser(userId);
     }
     if (!(await this.access.canShareScreen(userId, channelId))) {
-      this.screenShares.stopForUser(userId, channelId);
+      await this.screenShares.stopForUser(userId, channelId);
     }
   }
 }

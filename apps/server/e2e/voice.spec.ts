@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
@@ -6,11 +8,14 @@ import { ContactAudience, DEFAULT_EVERYONE_PERMISSIONS, Permission } from "@vore
 import argon2 from "argon2";
 
 const prisma = new PrismaClient();
+const execFileAsync = promisify(execFile);
+const screenShareNetemEnabled = process.env["SCREEN_SHARE_NETEM"] === "1";
 const password = "playwright voice password";
 const suffix = randomUUID().slice(0, 8);
 const aliceUsername = `voice-alice-${suffix}`;
 const bobUsername = `voice-bob-${suffix}`;
 const charlieUsername = `voice-charlie-${suffix}`;
+const screenViewerUsername = `voice-screen-viewer-${suffix}`;
 const clientAddresses = {
   alice: `2001:db8::${suffix.slice(0, 4)}:1`,
   bob: `2001:db8::${suffix.slice(0, 4)}:2`,
@@ -20,6 +25,7 @@ const clientAddresses = {
 };
 const userIds: string[] = [];
 let serverId: string;
+let aliceUserId: string;
 let bobUserId: string;
 const textChannelName = "general";
 
@@ -28,8 +34,10 @@ test.beforeAll(async () => {
   const aliceId = randomUUID();
   const bobId = randomUUID();
   const charlieId = randomUUID();
+  const screenViewerId = randomUUID();
+  aliceUserId = aliceId;
   bobUserId = bobId;
-  userIds.push(aliceId, bobId, charlieId);
+  userIds.push(aliceId, bobId, charlieId, screenViewerId);
   serverId = randomUUID();
   const roleId = randomUUID();
 
@@ -67,6 +75,14 @@ test.beforeAll(async () => {
   await prisma.user.create({
     data: { id: charlieId, username: charlieUsername, displayName: "Charlie", passwordHash },
   });
+  await prisma.user.create({
+    data: {
+      id: screenViewerId,
+      username: screenViewerUsername,
+      displayName: "Screen viewer",
+      passwordHash,
+    },
+  });
   await prisma.member.create({
     data: {
       id: randomUUID(),
@@ -88,6 +104,14 @@ test.beforeAll(async () => {
       id: randomUUID(),
       serverId,
       userId: bobId,
+      roles: { create: { roleId } },
+    },
+  });
+  await prisma.member.create({
+    data: {
+      id: randomUUID(),
+      serverId,
+      userId: screenViewerId,
       roles: { create: { roleId } },
     },
   });
@@ -421,6 +445,138 @@ test("direct call rings, carries RTP and resumes the same call after a network b
   }
 });
 
+test("two screen shares are watched selectively and track end removes only its own share", async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const aliceContext = await voiceContext(browser, `2001:db8::${suffix.slice(0, 4)}:11`);
+  const bobContext = await voiceContext(browser, `2001:db8::${suffix.slice(0, 4)}:12`);
+  const viewerContext = await voiceContext(browser, `2001:db8::${suffix.slice(0, 4)}:13`);
+  const alice = await aliceContext.newPage();
+  const bob = await bobContext.newPage();
+  const viewer = await viewerContext.newPage();
+  if (screenShareNetemEnabled) await viewer.setViewportSize({ width: 390, height: 844 });
+
+  try {
+    await Promise.all([
+      login(alice, aliceUsername),
+      login(bob, bobUsername),
+      login(viewer, screenViewerUsername),
+    ]);
+    for (const page of [alice, bob, viewer]) {
+      await page.getByRole("button", { name: /Голосовой/ }).click();
+      await page.getByRole("button", { name: "Подключиться" }).click();
+      await expect(page.getByText("Голос подключён")).toBeVisible();
+    }
+
+    await alice.getByRole("button", { name: "Показать экран" }).click();
+    await expect(bob.getByText(`Экран участника ${aliceUserId.slice(0, 6)}`)).toBeVisible();
+    await expect(bob.locator("video")).toHaveCount(0);
+    await expect.poll(() => inboundVideoBytes(bob)).toBe(0);
+    const aliceShareForBob = bob
+      .getByRole("listitem")
+      .filter({ hasText: `Экран участника ${aliceUserId.slice(0, 6)}` });
+    await aliceShareForBob.getByRole("button", { name: "Смотреть" }).click();
+    await waitForLiveVideo(bob);
+    if (screenShareNetemEnabled) {
+      await bob.getByRole("button", { name: "Не смотреть" }).click();
+      await expect(bob.locator("video")).toHaveCount(0);
+    }
+
+    await bob.getByRole("button", { name: "Показать экран" }).click();
+    const bobShare = viewer
+      .getByRole("listitem")
+      .filter({ hasText: `Экран участника ${bobUserId.slice(0, 6)}` });
+    await expect(bobShare).toBeVisible();
+
+    const aliceShare = viewer
+      .getByRole("listitem")
+      .filter({ hasText: `Экран участника ${aliceUserId.slice(0, 6)}` });
+    await aliceShare.getByRole("button", { name: "Смотреть" }).click();
+    await waitForLiveVideo(viewer);
+    await expect.poll(() => outboundVideoTrackCount(alice)).toBe(1);
+
+    if (screenShareNetemEnabled) {
+      const initial = await waitForInboundVideoDimensions(viewer);
+      const viewerMediaPort = await selectedInboundVideoPort(viewer);
+      await configureViewerDownlink(350);
+      const lowVideoBytes = await inboundVideoBytes(viewer);
+      const lowAudioBytes = await inboundAudioBytes(viewer);
+      await expect
+        .poll(() => inboundVideoBytes(viewer), { timeout: 20_000 })
+        .toBeGreaterThan(lowVideoBytes);
+      await expect
+        .poll(() => inboundAudioBytes(viewer), { timeout: 20_000 })
+        .toBeGreaterThan(lowAudioBytes);
+      await expect
+        .poll(async () => (await inboundVideoStats(viewer)).frameWidth, { timeout: 20_000 })
+        .toBeLessThanOrEqual(480);
+      const constrainedLow = await inboundVideoStats(viewer);
+      const lowAudioBytesAfter = await inboundAudioBytes(viewer);
+      const lowQdisc = await viewerDownlinkQdisc();
+      expect(netemPacketCount(lowQdisc)).toBeGreaterThan(0);
+      expect(netemByteCount(lowQdisc)).toBeGreaterThan(10_000);
+
+      await replaceViewerDownlinkRate(1_200);
+      await viewer.setViewportSize({ width: 1_280, height: 900 });
+      const medium = await waitForInboundVideoDimensions(viewer, constrainedLow.frameWidth);
+      const mediumAudioBytes = await inboundAudioBytes(viewer);
+      await expect
+        .poll(() => inboundAudioBytes(viewer), { timeout: 20_000 })
+        .toBeGreaterThan(mediumAudioBytes);
+      const mediumAudioBytesAfter = await inboundAudioBytes(viewer);
+      const mediumQdisc = await viewerDownlinkQdisc();
+      expect(netemPacketCount(mediumQdisc)).toBeGreaterThan(0);
+      expect(netemByteCount(mediumQdisc)).toBeGreaterThan(10_000);
+      await test.info().attach("screen-share-netem", {
+        body: JSON.stringify(
+          {
+            viewerMediaPort,
+            initial,
+            constrainedLow,
+            lowAudioBytes,
+            lowAudioBytesAfter,
+            lowQdisc,
+            medium,
+            mediumAudioBytes,
+            mediumAudioBytesAfter,
+            mediumQdisc,
+          },
+          null,
+          2,
+        ),
+        contentType: "application/json",
+      });
+      await clearViewerDownlink();
+    }
+
+    const viewerPeerConnections = await voicePeerConnectionCount(viewer);
+    await bobShare.getByRole("button", { name: "Смотреть" }).click();
+    await expect(viewer.locator("video")).toHaveCount(1);
+    await waitForLiveVideo(viewer);
+    await expect.poll(() => outboundVideoTrackCount(bob)).toBe(1);
+    await expect(voicePeerConnectionCount(viewer)).resolves.toBe(viewerPeerConnections);
+
+    await stopCapturedDisplay(alice);
+    await expect(viewer.getByText(`Экран участника ${aliceUserId.slice(0, 6)}`)).not.toBeVisible();
+    await expect(bobShare).toBeVisible();
+    await waitForLiveVideo(viewer);
+
+    await bob.reload();
+    await expect(bobShare).not.toBeVisible({ timeout: 30_000 });
+    await expect(viewer.locator("video")).toHaveCount(0);
+    for (const page of [alice, viewer]) {
+      await page.getByRole("button", { name: "Выйти из голосового канала" }).click();
+      await expect(page.getByText("Голос подключён")).not.toBeVisible();
+    }
+  } finally {
+    if (screenShareNetemEnabled) await clearViewerDownlink();
+    await closeContext(aliceContext);
+    await closeContext(bobContext);
+    await closeContext(viewerContext);
+  }
+});
+
 test("chat and voice work while three clients receive every remote track through the SFU", async ({
   browser,
 }) => {
@@ -578,13 +734,23 @@ async function voiceContext(browser: Browser, clientAddress: string): Promise<Br
     const instrumentedWindow = window as unknown as Window & {
       __voicePeerConnections: RTCPeerConnection[];
       __capturedMicrophoneTracks: MediaStreamTrack[];
+      __capturedDisplayTracks: MediaStreamTrack[];
     };
     instrumentedWindow.__voicePeerConnections = peerConnections;
     instrumentedWindow.__capturedMicrophoneTracks = [];
+    instrumentedWindow.__capturedDisplayTracks = [];
     const nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     navigator.mediaDevices.getUserMedia = async (constraints) => {
       const stream = await nativeGetUserMedia(constraints);
       instrumentedWindow.__capturedMicrophoneTracks.push(...stream.getAudioTracks());
+      return stream;
+    };
+    const nativeGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(
+      navigator.mediaDevices,
+    );
+    navigator.mediaDevices.getDisplayMedia = async (constraints) => {
+      const stream = await nativeGetDisplayMedia(constraints);
+      instrumentedWindow.__capturedDisplayTracks.push(...stream.getTracks());
       return stream;
     };
     window.RTCPeerConnection = class extends NativePeerConnection {
@@ -620,6 +786,206 @@ async function waitForLiveAudio(page: Page, expectedTracks: number): Promise<voi
     undefined,
     { timeout: 15_000 },
   );
+}
+
+async function waitForLiveVideo(page: Page): Promise<void> {
+  await page.waitForFunction(
+    `Array.from(document.querySelectorAll("video")).some((element) => {
+      const stream = element.srcObject;
+      if (!(stream instanceof MediaStream)) return false;
+      const track = stream.getVideoTracks()[0];
+      return track !== undefined && track.readyState === "live" && !element.paused;
+    })`,
+    undefined,
+    { timeout: 15_000 },
+  );
+}
+
+async function stopCapturedDisplay(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const tracks = (window as Window & { __capturedDisplayTracks?: MediaStreamTrack[] })
+      .__capturedDisplayTracks;
+    const video = tracks?.find((track) => track.kind === "video" && track.readyState === "live");
+    if (!video) throw new Error("No live captured display video track");
+    video.stop();
+    video.dispatchEvent(new Event("ended"));
+  });
+}
+
+async function inboundVideoBytes(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const instrumentedWindow = window as Window & {
+      __voicePeerConnections?: RTCPeerConnection[];
+    };
+    let bytes = 0;
+    for (const peerConnection of instrumentedWindow.__voicePeerConnections ?? []) {
+      const reports = await peerConnection.getStats();
+      reports.forEach((report) => {
+        if (report.type === "inbound-rtp" && report.kind === "video") {
+          bytes += Number(report.bytesReceived ?? 0);
+        }
+      });
+    }
+    return bytes;
+  });
+}
+
+interface InboundVideoStats {
+  readonly bytesReceived: number;
+  readonly framesDecoded: number;
+  readonly frameWidth: number;
+  readonly frameHeight: number;
+}
+
+async function inboundVideoStats(page: Page): Promise<InboundVideoStats> {
+  return page.evaluate(async () => {
+    const peerConnections = (window as Window & { __voicePeerConnections?: RTCPeerConnection[] })
+      .__voicePeerConnections;
+    const result = { bytesReceived: 0, framesDecoded: 0, frameWidth: 0, frameHeight: 0 };
+    for (const peerConnection of peerConnections ?? []) {
+      const reports = await peerConnection.getStats();
+      reports.forEach((report) => {
+        if (report.type !== "inbound-rtp" || report.kind !== "video") return;
+        result.bytesReceived += Number(report.bytesReceived ?? 0);
+        result.framesDecoded += Number(report.framesDecoded ?? 0);
+        result.frameWidth = Math.max(result.frameWidth, Number(report.frameWidth ?? 0));
+        result.frameHeight = Math.max(result.frameHeight, Number(report.frameHeight ?? 0));
+      });
+    }
+    return result;
+  });
+}
+
+async function waitForInboundVideoDimensions(
+  page: Page,
+  widerThan = 0,
+): Promise<InboundVideoStats> {
+  await expect
+    .poll(async () => (await inboundVideoStats(page)).frameWidth, { timeout: 20_000 })
+    .toBeGreaterThan(widerThan);
+  return inboundVideoStats(page);
+}
+
+async function selectedInboundVideoPort(page: Page): Promise<number> {
+  const port = await page.evaluate(async () => {
+    const peerConnections = (window as Window & { __voicePeerConnections?: RTCPeerConnection[] })
+      .__voicePeerConnections;
+    for (const peerConnection of peerConnections ?? []) {
+      const reports = await peerConnection.getStats();
+      for (const report of reports.values()) {
+        if (report.type !== "inbound-rtp" || report.kind !== "video") continue;
+        const transport = reports.get(String(report.transportId));
+        const candidatePair = transport
+          ? reports.get(String(transport.selectedCandidatePairId))
+          : undefined;
+        const localCandidate = candidatePair
+          ? reports.get(String(candidatePair.localCandidateId))
+          : undefined;
+        const candidatePort = Number(localCandidate?.port ?? 0);
+        if (candidatePort > 0) return candidatePort;
+      }
+    }
+    return 0;
+  });
+  if (port === 0) throw new Error("No selected inbound screen-video candidate port");
+  return port;
+}
+
+async function configureViewerDownlink(rateKbit: number): Promise<void> {
+  await clearViewerDownlink();
+  await runTc(["qdisc", "add", "dev", "lo", "root", "handle", "1:", "prio", "bands", "3"]);
+  await runTc([
+    "qdisc",
+    "add",
+    "dev",
+    "lo",
+    "parent",
+    "1:3",
+    "handle",
+    "30:",
+    "netem",
+    "delay",
+    "80ms",
+    "rate",
+    `${String(rateKbit)}kbit`,
+  ]);
+  for (let sourcePort = 41_000; sourcePort <= 41_010; sourcePort += 1) {
+    for (const protocol of ["ip", "ipv6"] as const) {
+      for (const transport of ["udp", "tcp"] as const) {
+        await runTc([
+          "filter",
+          "add",
+          "dev",
+          "lo",
+          "protocol",
+          protocol,
+          "parent",
+          "1:",
+          "prio",
+          protocol === "ip" ? "1" : "2",
+          "flower",
+          "ip_proto",
+          transport,
+          "src_port",
+          String(sourcePort),
+          "classid",
+          "1:3",
+        ]);
+      }
+    }
+  }
+}
+
+async function replaceViewerDownlinkRate(rateKbit: number): Promise<void> {
+  await runTc([
+    "qdisc",
+    "replace",
+    "dev",
+    "lo",
+    "parent",
+    "1:3",
+    "handle",
+    "30:",
+    "netem",
+    "delay",
+    "80ms",
+    "rate",
+    `${String(rateKbit)}kbit`,
+  ]);
+}
+
+async function viewerDownlinkQdisc(): Promise<string> {
+  const { stdout } = await execFileAsync("tc", ["-s", "qdisc", "show", "dev", "lo"]);
+  return stdout;
+}
+
+function netemPacketCount(qdisc: string): number {
+  const packetCount = /qdisc netem 30:[\s\S]*?Sent \d+ bytes (\d+) pkt/.exec(qdisc)?.[1];
+  return Number(packetCount ?? 0);
+}
+
+function netemByteCount(qdisc: string): number {
+  const byteCount = /qdisc netem 30:[\s\S]*?Sent (\d+) bytes/.exec(qdisc)?.[1];
+  return Number(byteCount ?? 0);
+}
+
+async function clearViewerDownlink(): Promise<void> {
+  await execFileAsync("tc", ["qdisc", "del", "dev", "lo", "root"]).catch(() => undefined);
+}
+
+async function runTc(arguments_: readonly string[]): Promise<void> {
+  await execFileAsync("tc", [...arguments_]);
+}
+
+async function outboundVideoTrackCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const instrumentedWindow = window as Window & {
+      __voicePeerConnections?: RTCPeerConnection[];
+    };
+    return (instrumentedWindow.__voicePeerConnections ?? []).flatMap((peerConnection) =>
+      peerConnection.getSenders().filter((sender) => sender.track?.kind === "video"),
+    ).length;
+  });
 }
 
 async function waitForPausedPlayback(page: Page, expectedTracks: number): Promise<void> {

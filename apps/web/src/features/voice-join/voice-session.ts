@@ -3,6 +3,7 @@ import {
   type SetVoiceSelfStatePayload,
   type VoiceParticipantUpdatedEvent,
   type SetVoiceModeratorStatePayload,
+  type ScreenShareView,
   VoiceClientEvent,
   type VoiceParticipantView,
 } from "@voreli/shared";
@@ -16,6 +17,8 @@ import { VoiceSpeakingMonitor } from "./voice-speaking-monitor";
 import { VoiceSessionState } from "./voice-state";
 import { VoiceInputDevice } from "../voice-devices/voice-input-device";
 import { VoiceDeviceController } from "../voice-devices/voice-device-controller";
+import { ScreenShareController } from "../screen-share/screen-share-controller";
+import { ScreenShareViewer } from "../screen-share/screen-share-viewer";
 
 /**
  * The one object the UI talks to: every command a person can issue on a voice session.
@@ -36,6 +39,8 @@ class VoiceSession {
     this.speaking,
     this.state,
   );
+  private readonly screenShare = new ScreenShareController(this.signaling, this.state, this.media);
+  private readonly screenViewer = new ScreenShareViewer(this.signaling, this.state, this.media);
   private readonly connection = new VoiceConnection(
     this.signaling,
     this.state,
@@ -50,13 +55,19 @@ class VoiceSession {
       state: this.state,
       media: this.media,
       speaking: this.speaking,
+      screenViewing: this.screenViewer,
+      screenPublishing: this.screenShare,
       lifecycle: {
         reconnect: () => {
           void this.serial(() => this.connection.resume()).catch((error: unknown) =>
             this.state.failed(error),
           );
         },
-        forceLeave: () => this.connection.shutdown(),
+        forceLeave: () => {
+          this.screenShare.close();
+          this.screenViewer.close();
+          this.connection.shutdown();
+        },
       },
     });
   }
@@ -66,6 +77,8 @@ class VoiceSession {
     // The AudioContext and the microphone prompt both need the user gesture that is still on
     // the stack right now; asking for them after the first await would be too late.
     this.speaking.unlockAudio();
+    this.screenShare.close();
+    this.screenViewer.close();
     const microphone = this.devices.capture();
     void microphone.catch((error: unknown) => {
       console.error("Failed to capture the voice microphone", { error });
@@ -86,6 +99,8 @@ class VoiceSession {
       return Promise.resolve();
     }
     this.speaking.unlockAudio();
+    this.screenShare.close();
+    this.screenViewer.close();
     const microphone = preparedMicrophone
       ? preparedMicrophone.then((stream) => this.devices.adopt(stream))
       : this.devices.capture();
@@ -107,6 +122,8 @@ class VoiceSession {
           await this.signaling.request<null>(VoiceClientEvent.Leave, {});
         }
       } finally {
+        this.screenShare.close();
+        this.screenViewer.close();
         this.connection.shutdown({ clearError: true });
       }
     });
@@ -146,6 +163,43 @@ class VoiceSession {
   startEcho(): Promise<void> {
     this.speaking.unlockAudio();
     return this.run(() => this.media.startEcho());
+  }
+
+  startScreenShare(): Promise<void> {
+    const display = this.screenShare.captureDisplay();
+    void display.catch((error: unknown) => {
+      console.error("Failed to capture the display", { error });
+      this.state.failed(error);
+    });
+    return this.run(async () => this.screenShare.start(await display));
+  }
+
+  stopScreenShare(): Promise<void> {
+    return this.run(() => this.screenShare.stop());
+  }
+
+  watchScreenShare(screenShare: ScreenShareView): Promise<void> {
+    return this.run(() => this.screenViewer.watch(screenShare));
+  }
+
+  unwatchScreenShare(): Promise<void> {
+    return this.run(() => this.screenViewer.unwatch());
+  }
+
+  attachScreenVideo(element: HTMLVideoElement | null): Promise<void> {
+    return this.screenViewer.attachVideo(element);
+  }
+
+  setScreenShareLayer(spatialLayer: 0 | 1 | 2): Promise<void> {
+    return this.run(() => this.screenViewer.setPreferredLayer(spatialLayer));
+  }
+
+  setScreenShareVisible(visible: boolean): Promise<void> {
+    return this.run(() => this.screenViewer.setVisible(visible));
+  }
+
+  resumeScreenShareAudio(): Promise<void> {
+    return this.run(() => this.screenViewer.resumeAudio());
   }
 
   /**

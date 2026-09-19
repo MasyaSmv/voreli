@@ -8,6 +8,8 @@ import {
   type VoiceProducerEvent,
   VoiceServerEvent,
   type VoiceSpeakingEvent,
+  type ScreenShareEvent,
+  type ScreenShareStoppedEvent,
 } from "@voreli/shared";
 
 import { VoiceRequestError } from "./voice-request-error";
@@ -41,10 +43,21 @@ export interface RemoteSpeakers {
   setRemote(userIds: readonly string[]): void;
 }
 
+export interface ScreenShareViewing {
+  updated(screenShare: ScreenShareEvent["screenShare"]): void;
+  stopped(screenStreamId: string): void;
+}
+
+export interface ScreenSharePublishing {
+  stopped(screenStreamId: string): void;
+}
+
 interface VoiceServerEventDeps {
   readonly state: VoiceSessionState;
   readonly media: VoiceMediaControl;
   readonly speaking: RemoteSpeakers;
+  readonly screenViewing: ScreenShareViewing;
+  readonly screenPublishing: ScreenSharePublishing;
   readonly lifecycle: VoiceSessionLifecycle;
 }
 
@@ -56,7 +69,7 @@ interface VoiceServerEventDeps {
  */
 export function bindVoiceServerEvents(
   signaling: VoiceSignaling,
-  { state, media, speaking, lifecycle }: VoiceServerEventDeps,
+  { state, media, speaking, screenViewing, screenPublishing, lifecycle }: VoiceServerEventDeps,
 ): void {
   signaling.on("disconnect", () => {
     if (state.isActive) state.reconnecting();
@@ -107,6 +120,21 @@ export function bindVoiceServerEvents(
 
   signaling.on<VoiceSpeakingEvent>(VoiceServerEvent.Speaking, (event) => {
     speaking.setRemote(event.speaking.map((speaker) => speaker.userId));
+  });
+
+  signaling.on<ScreenShareEvent>(VoiceServerEvent.ScreenStarted, ({ screenShare }) => {
+    state.upsertScreenShare(screenShare);
+  });
+
+  signaling.on<ScreenShareEvent>(VoiceServerEvent.ScreenUpdated, ({ screenShare }) => {
+    screenViewing.updated(screenShare);
+    state.upsertScreenShare(screenShare);
+  });
+
+  signaling.on<ScreenShareStoppedEvent>(VoiceServerEvent.ScreenStopped, (event) => {
+    screenPublishing.stopped(event.screenStreamId);
+    screenViewing.stopped(event.screenStreamId);
+    state.removeScreenShare(event.screenStreamId);
   });
 
   signaling.on<VoiceErrorEvent>(VoiceServerEvent.Error, (event) => {

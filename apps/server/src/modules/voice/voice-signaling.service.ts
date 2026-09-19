@@ -23,6 +23,7 @@ import { MediaRoomAccessService } from "./media-room-access.service.js";
 import { VoiceParticipantControlService } from "./voice-participant-control.service.js";
 import { VoiceMediaSessionContextService } from "./voice-media-session-context.service.js";
 import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
+import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
 
 @Injectable()
 export class VoiceSignalingService {
@@ -35,6 +36,7 @@ export class VoiceSignalingService {
     private readonly controls: VoiceParticipantControlService,
     private readonly contexts: VoiceMediaSessionContextService,
     private readonly screenShares: ScreenShareLifecycleService,
+    private readonly screenViewing: ScreenShareViewingService,
   ) {}
 
   async createTransport(
@@ -124,7 +126,7 @@ export class VoiceSignalingService {
     const { participant } = await this.contexts.resolve(userId, authenticationSessionId);
     if (
       this.media.producerSource(payload.producerId) !== "microphone" &&
-      !this.screenShares.canConsume(participant.sessionId, payload.producerId)
+      !this.screenViewing.canConsume(participant.sessionId, payload.producerId)
     ) {
       throw new VoiceCannotConsumeError();
     }
