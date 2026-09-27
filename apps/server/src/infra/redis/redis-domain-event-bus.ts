@@ -10,6 +10,7 @@ import {
 import { RedisClientFactory } from "./redis-client.factory.js";
 
 const EVENT_NAMES: readonly DomainEventName[] = [
+  "upload.ready",
   "session.revoked",
   "member.roles.changed",
   "channel.overrides.changed",
@@ -50,6 +51,12 @@ function parsePayload<Name extends DomainEventName>(
   }
 
   const record = parsed as Record<string, unknown>;
+
+  if (name === "upload.ready") {
+    return nonEmptyString(record["uploadId"]) && nonEmptyString(record["ownerId"])
+      ? (record as unknown as DomainEventMap[Name])
+      : null;
+  }
 
   if (name === "session.revoked") {
     return nonEmptyString(record["sessionId"]) && nonEmptyString(record["userId"])

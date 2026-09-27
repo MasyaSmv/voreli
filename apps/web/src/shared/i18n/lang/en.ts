@@ -88,6 +88,12 @@ export const en = {
     audienceFriends: "Friends only",
     audienceNobody: "Nobody",
     closeContacts: "Close all contact options",
+    changeAvatar: "Change avatar",
+    uploadingAvatar: "Uploading {{progress}}%",
+    avatarFailed: "Avatar upload failed",
+    processingAvatar: "Processing avatar…",
+    retryAvatar: "Retry",
+    pasteAvatar: "You can paste an image while the button is focused",
   },
   friends: {
     title: "Direct messages",

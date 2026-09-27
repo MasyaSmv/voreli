@@ -9,6 +9,9 @@ process.env["DATABASE_URL"] = databaseUrl;
 
 const serverEnvironment = {
   ...process.env,
+  // Browser tests exercise the real background lifecycle, including uploads.
+  NODE_ENV: "development",
+  QUEUE_PREFIX: "voreli-playwright",
   DATABASE_URL: databaseUrl,
   PORT: "3200",
   CORS_ORIGIN: "http://127.0.0.1:5174",

@@ -9,7 +9,9 @@ import { DomainExceptionFilter } from "./common/filters/domain-exception.filter.
 import { RateLimitModule } from "./common/rate-limit/rate-limit.module.js";
 import { validateEnv } from "./config/env.validation.js";
 import { DatabaseModule } from "./infra/database/database.module.js";
+import { QueueModule } from "./infra/queue/queue.module.js";
 import { RedisModule } from "./infra/redis/redis.module.js";
+import { StorageModule } from "./infra/storage/storage.module.js";
 import { MediaModule } from "./media/media.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { ChatModule } from "./modules/chat/chat.module.js";
@@ -19,6 +21,7 @@ import { PermissionsModule } from "./modules/permissions/permissions.module.js";
 import { RealtimeModule } from "./modules/realtime/realtime.module.js";
 import { RelationshipsModule } from "./modules/relationships/relationships.module.js";
 import { ServersModule } from "./modules/servers/servers.module.js";
+import { UploadsModule } from "./modules/uploads/uploads.module.js";
 import { VoiceModule } from "./modules/voice/voice.module.js";
 
 @Module({
@@ -34,7 +37,9 @@ import { VoiceModule } from "./modules/voice/voice.module.js";
     CommonModule,
     RateLimitModule,
     DatabaseModule,
+    QueueModule,
     RedisModule,
+    StorageModule,
     MediaModule,
     HealthModule,
     AuthModule,
@@ -45,6 +50,7 @@ import { VoiceModule } from "./modules/voice/voice.module.js";
     ChatModule,
     CallsModule,
     VoiceModule,
+    UploadsModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],
 })

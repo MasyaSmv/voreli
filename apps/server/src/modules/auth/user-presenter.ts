@@ -15,7 +15,7 @@ export class UserPresenter {
       id: user.id,
       username: user.username,
       displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: user.avatarUploadId ? `/uploads/${user.avatarUploadId}/content` : user.avatarUrl,
       createdAt: user.createdAt.toISOString(),
     };
   }

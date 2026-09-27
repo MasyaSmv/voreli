@@ -53,6 +53,12 @@ jobs:
       CORS_ORIGIN: http://localhost:5173
       COOKIE_SECURE: "false"
       VITE_SERVER_URL: ""
+      S3_ENDPOINT: http://localhost:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: voreli
+      S3_SECRET_KEY: voreli-ci-storage-secret
+      S3_BUCKET: voreli_test
+      S3_FORCE_PATH_STYLE: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +74,20 @@ jobs:
 
       - run: pnpm build
 
+      - name: Start private object storage for upload integration tests
+        run: |
+          docker run --detach --name voreli-ci-minio --publish 9000:9000 \
+            --env MINIO_ROOT_USER="$S3_ACCESS_KEY" \
+            --env MINIO_ROOT_PASSWORD="$S3_SECRET_KEY" \
+            minio/minio:latest server /data
+          curl --fail --retry 20 --retry-delay 1 --retry-connrefused \
+            --max-time 2 http://localhost:9000/minio/health/ready
+
+      - name: Install image worker resource limits
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes util-linux
+
       - run: pnpm verify
 
       - name: Install Chromium and PulseAudio device harness
@@ -77,6 +97,8 @@ jobs:
           sudo apt-get install --yes pulseaudio pulseaudio-utils
           pulseaudio --start --exit-idle-time=-1
           pactl info
+
+      - run: pnpm e2e --project=browser
 
       - run: xvfb-run --auto-servernum pnpm e2e:devices
         env:

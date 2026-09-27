@@ -1,6 +1,7 @@
 export const DOMAIN_EVENT_BUS = Symbol("DOMAIN_EVENT_BUS");
 
 export interface DomainEventMap {
+  readonly "upload.ready": { readonly uploadId: string; readonly ownerId: string };
   readonly "session.revoked": { readonly sessionId: string; readonly userId: string };
   readonly "member.roles.changed": { readonly serverId: string; readonly userId: string };
   readonly "channel.overrides.changed": { readonly channelId: string };

@@ -12,6 +12,7 @@ interface SessionState {
   register: (inviteCode: string, username: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
   restore: () => Promise<void>;
+  updateUser: (user: PublicUser) => void;
 }
 
 interface AuthPayload {
@@ -29,6 +30,7 @@ export const useSession = create<SessionState>((set) => {
   return {
     user: null,
     restoring: true,
+    updateUser: (user) => set({ user }),
 
     async logIn(username, password) {
       adopt(

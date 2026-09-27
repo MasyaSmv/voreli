@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { ContactAudience } from "@voreli/shared";
+import sharp from "sharp";
 
 import { closeContext } from "./support/voice-browser.js";
 import {
@@ -116,6 +117,22 @@ test("workspace home, channel creation, settings and message dates are interacti
     await page.getByRole("button", { name: "Открыть профиль и настройки" }).click();
     await page.getByRole("button", { name: "English" }).click();
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+
+    const avatar = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "red" },
+    })
+      .png()
+      .toBuffer();
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "Change avatar" }).click();
+    const avatarSavedPromise = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/users/me/avatar") && response.request().method() === "PUT",
+    );
+    await (await chooser).setFiles({ name: "avatar.png", mimeType: "image/png", buffer: avatar });
+    const avatarSaved = await avatarSavedPromise;
+    expect(avatarSaved.status(), await avatarSaved.text()).toBe(200);
+    await expect(page.locator('img[src*="/uploads/"]').first()).toBeVisible();
   } finally {
     await closeContext(context);
   }

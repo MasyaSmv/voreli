@@ -4,6 +4,7 @@ import { expect, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { DEFAULT_EVERYONE_PERMISSIONS } from "@voreli/shared";
 import argon2 from "argon2";
+import { disposeUploadFixtures } from "./upload-fixtures.js";
 
 export const prisma = new PrismaClient();
 export const password = "playwright voice password";
@@ -95,6 +96,7 @@ export async function seedVoreliFixture(): Promise<void> {
 }
 
 export async function disposeVoreliFixture(): Promise<void> {
+  await disposeUploadFixtures(prisma, userIds);
   await prisma.server.delete({ where: { id: serverId } });
   await prisma.directConversation.deleteMany({
     where: { OR: [{ userLowId: { in: userIds } }, { userHighId: { in: userIds } }] },
