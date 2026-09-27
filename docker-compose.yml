@@ -41,7 +41,8 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: voreli-minio:local
+    build: ./docker/minio
     container_name: voreli-minio
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
@@ -55,7 +56,7 @@ services:
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9000/minio/health/ready"]
       interval: 5s
       timeout: 5s
       retries: 10

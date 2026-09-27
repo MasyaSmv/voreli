@@ -77,6 +77,11 @@ packages/
 
 Требуется Node 22+, pnpm 10+, Docker.
 
+MinIO собирается Docker из закреплённого upstream-коммита в `docker/minio/Dockerfile`:
+первый запуск занимает несколько дополнительных минут. CI использует тот же образ.
+Исходники MinIO доступны по указанной в Dockerfile ссылке и лицензированы AGPL-3.0;
+этот отдельный сервис не входит в MIT-лицензию Voreli.
+
 ```bash
 cp .env.example .env      # задать JWT_SECRET; порты можно сдвинуть, если заняты
 pnpm install

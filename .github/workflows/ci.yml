@@ -76,10 +76,11 @@ jobs:
 
       - name: Start private object storage for upload integration tests
         run: |
+          docker build --tag voreli-minio:local docker/minio
           docker run --detach --name voreli-ci-minio --publish 9000:9000 \
             --env MINIO_ROOT_USER="$S3_ACCESS_KEY" \
             --env MINIO_ROOT_PASSWORD="$S3_SECRET_KEY" \
-            minio/minio:latest server /data
+            voreli-minio:local server /data
           curl --fail --retry 20 --retry-delay 1 --retry-connrefused \
             --max-time 2 http://localhost:9000/minio/health/ready
 
