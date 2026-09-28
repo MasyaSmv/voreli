@@ -181,6 +181,37 @@ export class EnvironmentVariables {
   @Min(1_000)
   @Max(60_000)
   CALL_RECONCILE_INTERVAL_MS: number = 10_000;
+
+  @IsString()
+  @MinLength(1)
+  S3_ENDPOINT: string = "http://localhost:9000";
+
+  @IsString()
+  @MinLength(1)
+  S3_REGION: string = "us-east-1";
+
+  @IsString()
+  @MinLength(1)
+  S3_ACCESS_KEY: string = "voreli";
+
+  @IsString()
+  @MinLength(1)
+  S3_SECRET_KEY: string = "voreli-secret";
+
+  @IsString()
+  @MinLength(1)
+  S3_BUCKET: string = "voreli";
+
+  @IsString()
+  @MinLength(1)
+  QUEUE_PREFIX: string = "voreli";
+
+  @Transform(({ obj }) => {
+    const raw: unknown = (obj as Record<string, unknown>)["S3_FORCE_PATH_STYLE"];
+    return raw === undefined || raw === "" || raw === true || raw === "true";
+  })
+  @IsBoolean()
+  S3_FORCE_PATH_STYLE: boolean = true;
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvironmentVariables {

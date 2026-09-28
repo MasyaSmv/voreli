@@ -5,4 +5,5 @@ export * from "./health/health.contract.js";
 export * from "./permissions/permissions.js";
 export * from "./relationships/relationships.contract.js";
 export * from "./servers/server.contract.js";
+export * from "./uploads/upload.contract.js";
 export * from "./voice/voice.contract.js";

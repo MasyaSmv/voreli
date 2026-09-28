@@ -10,6 +10,7 @@ import {
   fetchContactSettings,
   updateContactSettings,
 } from "../../entities/relationship/relationship.api";
+import { AvatarUpload } from "../attachment-upload/AvatarUpload";
 
 export function AccountSettingsDialog({
   user,
@@ -44,6 +45,7 @@ export function AccountSettingsDialog({
             <div className="min-w-0">
               <p className="truncate font-semibold text-ink">{user.displayName}</p>
               <p className="truncate text-sm text-muted">@{user.username}</p>
+              <AvatarUpload key={user.id} ownerId={user.id} />
             </div>
           </div>
         </section>

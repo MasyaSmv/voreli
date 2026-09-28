@@ -41,20 +41,22 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: voreli-minio:local
+    build: ./docker/minio
     container_name: voreli-minio
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-voreli}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-voreli-secret}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_CORS_ALLOW_ORIGIN:-http://localhost:5173,http://127.0.0.1:5174}
     ports:
       - "${S3_PORT:-9000}:9000"
       - "${S3_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9000/minio/health/ready"]
       interval: 5s
       timeout: 5s
       retries: 10

@@ -86,6 +86,12 @@ export const ru = {
     audienceFriends: "Только друзья",
     audienceNobody: "Никто",
     closeContacts: "Закрыть все контакты",
+    changeAvatar: "Сменить аватар",
+    uploadingAvatar: "Загрузка {{progress}}%",
+    avatarFailed: "Не удалось загрузить аватар",
+    processingAvatar: "Обрабатываем аватар…",
+    retryAvatar: "Повторить",
+    pasteAvatar: "Можно вставить изображение, когда кнопка в фокусе",
   },
   friends: {
     title: "Личные сообщения",

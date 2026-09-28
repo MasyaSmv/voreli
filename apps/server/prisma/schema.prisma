@@ -12,14 +12,15 @@ datasource db {
 }
 
 model User {
-  id           String   @id
-  username     String   @unique
-  displayName  String
-  passwordHash String
-  email        String?  @unique
-  avatarUrl    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id
+  username       String   @unique
+  displayName    String
+  passwordHash   String
+  email          String?  @unique
+  avatarUrl      String?
+  avatarUploadId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   sessions     RefreshSession[]
   memberships  Member[]
@@ -41,6 +42,8 @@ model User {
   callsStarted         DirectCall[]             @relation("DirectCallCaller")
   callsReceived        DirectCall[]             @relation("DirectCallCallee")
   callsEnded           DirectCall[]             @relation("DirectCallEndedBy")
+  uploads              Upload[]
+  avatarUpload         Upload?                  @relation("UserAvatar", fields: [avatarUploadId], references: [id], onDelete: SetNull)
 
   @@map("users")
 }
@@ -357,6 +360,7 @@ model Message {
   replies            Message[]                @relation("MessageReply")
   directReadMarks    DirectConversationRead[] @relation("DirectConversationLastRead")
   callHistory        DirectCall?              @relation("DirectCallHistoryMessage")
+  attachments        Attachment[]
 
   @@unique([directConversationId, authorId, clientNonce])
   // Cursor pagination of channel history walks this index backwards. Never OFFSET.
@@ -364,6 +368,83 @@ model Message {
   @@index([directConversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([authorId])
   @@map("messages")
+}
+
+enum UploadPurpose {
+  ATTACHMENT
+  AVATAR
+}
+
+enum UploadStatus {
+  RESERVED
+  UPLOADED
+  PROCESSING
+  READY
+  REJECTED
+  EXPIRED
+}
+
+model Upload {
+  id               String        @id
+  ownerId          String
+  purpose          UploadPurpose
+  status           UploadStatus
+  originalName     String
+  declaredMime     String
+  detectedMime     String?
+  byteSize         Int
+  objectKey        String        @unique
+  checksumSha256   String?
+  width            Int?
+  height           Int?
+  thumbnailKey     String?
+  rejectionCode    String?
+  reservedAt       DateTime      @default(now())
+  expiresAt        DateTime
+  completedAt      DateTime?
+  objectDeletedAt  DateTime?
+  stagingDeletedAt DateTime?
+  unreferencedAt   DateTime?
+  cleanupRetryAt   DateTime      @default(now())
+  cleanupAttempts  Int           @default(0)
+
+  owner         User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  avatarForUser User?       @relation("UserAvatar")
+  attachment    Attachment?
+
+  @@index([ownerId, status, reservedAt(sort: Desc)])
+  @@index([status, expiresAt])
+  @@index([status, unreferencedAt])
+  @@map("uploads")
+}
+
+model Attachment {
+  id        String   @id
+  uploadId  String   @unique
+  messageId String
+  position  Int
+  createdAt DateTime @default(now())
+
+  upload  Upload  @relation(fields: [uploadId], references: [id], onDelete: Restrict)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, position])
+  @@index([messageId])
+  @@map("attachments")
+}
+
+model OutboxEvent {
+  id          String    @id
+  type        String
+  aggregateId String
+  payload     Json
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+  attempts    Int       @default(0)
+  nextAttempt DateTime  @default(now())
+
+  @@index([publishedAt, nextAttempt, createdAt])
+  @@map("outbox_events")
 }
 
 /// How far a member has read a channel. Unread is "messages newer than this mark", counted

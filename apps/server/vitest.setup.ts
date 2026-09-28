@@ -2,6 +2,7 @@
 // polyfill; production loads it in main.ts, tests never reach that entry point.
 import "reflect-metadata";
 
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import { config as loadEnv } from "dotenv";
@@ -16,6 +17,8 @@ if (typeof testUrl === "string" && testUrl.length > 0) {
 }
 
 process.env["NODE_ENV"] = "test";
+// A development worker must never consume jobs whose rows exist only in the test database.
+process.env["QUEUE_PREFIX"] = `voreli-test-${randomUUID()}`;
 // A real mediasoup worker is booted by every application harness. One is enough to test
 // the media contracts and keeps the sequential suite from paying for every host CPU.
 process.env["MEDIASOUP_MAX_WORKERS"] = "1";
