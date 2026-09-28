@@ -81,8 +81,12 @@ jobs:
             --env MINIO_ROOT_USER="$S3_ACCESS_KEY" \
             --env MINIO_ROOT_PASSWORD="$S3_SECRET_KEY" \
             voreli-minio:local server /data
-          curl --fail --retry 20 --retry-delay 1 --retry-connrefused \
-            --max-time 2 http://localhost:9000/minio/health/ready
+          # Docker can accept the connection before MinIO is listening, then reset it.
+          if ! curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
+            --max-time 2 http://localhost:9000/minio/health/ready; then
+            docker logs voreli-ci-minio
+            exit 1
+          fi
 
       - name: Install image worker resource limits
         run: |
