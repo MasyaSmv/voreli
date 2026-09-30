@@ -11,6 +11,24 @@ import { AttachmentDownloadService } from "./attachment-download.service.js";
 export class AttachmentsController {
   constructor(private readonly downloads: AttachmentDownloadService) {}
 
+  @Get(":attachmentId/preview")
+  async preview(
+    @CurrentAttachment() attachment: AccessibleAttachment,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ url: string }> {
+    response.set("Cache-Control", "private, no-store");
+    return { url: await this.downloads.previewUrl(attachment) };
+  }
+
+  @Get(":attachmentId/download-url")
+  async downloadUrl(
+    @CurrentAttachment() attachment: AccessibleAttachment,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ url: string }> {
+    response.set("Cache-Control", "private, no-store");
+    return { url: await this.downloads.redirectUrl(attachment) };
+  }
+
   @Get(":attachmentId/download")
   async download(
     @CurrentAttachment() attachment: AccessibleAttachment,

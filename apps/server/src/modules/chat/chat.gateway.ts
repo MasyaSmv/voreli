@@ -25,6 +25,7 @@ import { DirectChatHandlers } from "./direct-chat-handlers.js";
 import { DirectChatRoomAccessService } from "./direct-chat-room-access.service.js";
 import {
   ChannelPayloadDto,
+  ReactionDto,
   DirectConversationDto,
   DirectMarkReadDto,
   DirectSendMessageDto,
@@ -55,6 +56,22 @@ export class ChatGateway extends AuthenticatedGateway {
     this.channelAccess.attach(server);
     this.directAccess.attach(server);
     this.broadcaster.attach(server);
+  }
+
+  @SubscribeMessage(ClientEvent.AddReaction)
+  @WsRateLimit({ limit: 20, windowMs: 5000 })
+  addReaction(@ConnectedSocket() socket: AuthenticatedSocket, @MessageBody() payload: unknown) {
+    return this.guarded(socket, (identity) =>
+      this.channels.reaction(identity, validateSocketPayload(ReactionDto, payload), true),
+    );
+  }
+
+  @SubscribeMessage(ClientEvent.RemoveReaction)
+  @WsRateLimit({ limit: 20, windowMs: 5000 })
+  removeReaction(@ConnectedSocket() socket: AuthenticatedSocket, @MessageBody() payload: unknown) {
+    return this.guarded(socket, (identity) =>
+      this.channels.reaction(identity, validateSocketPayload(ReactionDto, payload), false),
+    );
   }
 
   @SubscribeMessage(ClientEvent.Subscribe)

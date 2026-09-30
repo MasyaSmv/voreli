@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { createId } from "@paralleldrive/cuid2";
-import { Permission, serializePermissions } from "@voreli/shared";
+import { encodeTextContent, Permission, serializePermissions } from "@voreli/shared";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -60,7 +60,12 @@ describe("private attachment downloads", () => {
       data: { id: channelId, serverId: server.serverId, name: "files", type: "TEXT" },
     });
     await harness.prisma.db.message.create({
-      data: { id: messageId, channelId, authorId: author.id, content: Buffer.from("file") },
+      data: {
+        id: messageId,
+        channelId,
+        authorId: author.id,
+        content: Buffer.from(encodeTextContent("file")),
+      },
     });
     const uploads = harness.app.get(UploadService);
     const reservation = await uploads.reserve(author.id, {

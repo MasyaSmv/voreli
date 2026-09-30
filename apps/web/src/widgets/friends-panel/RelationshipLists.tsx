@@ -109,13 +109,13 @@ function ConversationRow({
   const { t } = useTranslation();
   const lastMessage = conversation.lastMessage;
   const preview =
-    lastMessage?.callEvent === null || lastMessage?.callEvent === undefined
-      ? lastMessage?.text
-      : lastMessage.callEvent.outcome === "completed"
+    lastMessage?.body.kind !== "call"
+      ? lastMessage?.body.text
+      : lastMessage.body.call.outcome === "completed"
         ? t("call.history.completed", {
-            duration: formatCallDuration(lastMessage.callEvent.durationSeconds ?? 0),
+            duration: formatCallDuration(lastMessage.body.call.durationSeconds ?? 0),
           })
-        : t(`call.history.${lastMessage.callEvent.outcome}`);
+        : t(`call.history.${lastMessage.body.call.outcome}`);
   return (
     <button
       type="button"

@@ -1,7 +1,10 @@
+import { UploadPreviewService } from "./upload-preview.service.js";
 import { RasterImageInspector } from "./raster-image-inspector.js";
 import { UploadInspectorService } from "./upload-inspector.service.js";
 import { Module } from "@nestjs/common";
 import { ProcessModule } from "../../infra/process/process.module.js";
+import { QueueModule } from "../../infra/queue/queue.module.js";
+import { StorageModule } from "../../infra/storage/storage.module.js";
 
 import { AuthModule } from "../auth/auth.module.js";
 import { PermissionsModule } from "../permissions/permissions.module.js";
@@ -29,7 +32,14 @@ import {
 } from "./uploads.controller.js";
 
 @Module({
-  imports: [AuthModule, PermissionsModule, RelationshipsModule, ProcessModule],
+  imports: [
+    AuthModule,
+    PermissionsModule,
+    RelationshipsModule,
+    ProcessModule,
+    QueueModule,
+    StorageModule,
+  ],
   controllers: [
     UploadsController,
     AvatarController,
@@ -51,6 +61,7 @@ import {
     UploadLifecycleService,
     UploadPolicyService,
     UploadPresenter,
+    UploadPreviewService,
     UploadProcessorService,
     UploadService,
     UploadWorkerService,

@@ -1,3 +1,4 @@
+import { useReactionEvents } from "../message-reaction/useReactionEvents";
 import { ClientEvent, ServerEvent, type MessageView } from "@voreli/shared";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +8,7 @@ import { stringField, useRealtimeConversation } from "./useRealtimeConversation"
 
 export function useChannelChat(channelId: string | null) {
   const { t } = useTranslation();
+  useReactionEvents(channelId);
   const adapter = useMemo(
     () =>
       channelId === null
@@ -23,7 +25,7 @@ export function useChannelChat(channelId: string | null) {
               typing: ServerEvent.Typing,
               accessRevoked: ServerEvent.ChannelAccessRevoked,
             },
-            fetchHistory: () => fetchHistory(channelId),
+            fetchHistory: (before?: string) => fetchHistory(channelId, before),
             payload: (extra = {}) => ({ channelId, ...extra }),
             messageBelongs: (message: MessageView) => message.channelId === channelId,
             deletedMessageId: (event: unknown) =>

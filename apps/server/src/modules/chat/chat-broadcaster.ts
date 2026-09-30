@@ -3,6 +3,7 @@ import {
   type DirectMessageDeletedEvent,
   type MessageDeletedEvent,
   type MessageView,
+  type ReactionUpdatedEvent,
   ServerEvent,
 } from "@voreli/shared";
 import type { Namespace } from "socket.io";
@@ -35,6 +36,10 @@ export class ChatBroadcaster {
   /** Called by the gateway once its namespace exists; nothing else may call it. */
   attach(server: Namespace): void {
     this.server = server;
+  }
+
+  reactionUpdated(event: ReactionUpdatedEvent): void {
+    this.emit(channelRoomOf(event.channelId), ServerEvent.ReactionUpdated, event);
   }
 
   messageCreated(message: MessageView): void {

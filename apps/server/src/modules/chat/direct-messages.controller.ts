@@ -50,7 +50,7 @@ export class DirectMessagesController {
     });
 
     return {
-      messages: page.messages.map((message) => this.presenter.toView(message)),
+      messages: await this.presenter.page(page.messages, auth.user.id),
       nextCursor: page.nextCursor,
     };
   }

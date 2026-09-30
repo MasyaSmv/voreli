@@ -1,3 +1,5 @@
+import { ReactionService } from "./reaction.service.js";
+import type { ReactionPayload } from "@voreli/shared";
 import { Inject, Injectable } from "@nestjs/common";
 import {
   type Ack,
@@ -22,18 +24,26 @@ import type { AuthenticatedSocket } from "../realtime/authenticated.gateway.js";
 import type { SocketIdentity } from "../realtime/socket-identity.service.js";
 import { ChatBroadcaster, channelRoomOf } from "./chat-broadcaster.js";
 import { MessagePresenter } from "./message-presenter.js";
-import { MessageService } from "./message.service.js";
+import { MessageCompositionService } from "./message-composition.service.js";
 import { UnreadService } from "./unread.service.js";
 
 @Injectable()
 export class ChannelChatHandlers {
   constructor(
     @Inject(PERMISSION_RESOLVER) private readonly permissions: PermissionResolverContract,
-    private readonly messages: MessageService,
+    private readonly reactions: ReactionService,
+    private readonly messages: MessageCompositionService,
     private readonly unread: UnreadService,
     private readonly presenter: MessagePresenter,
     private readonly broadcaster: ChatBroadcaster,
   ) {}
+
+  async reaction(identity: SocketIdentity, payload: ReactionPayload, added: boolean) {
+    return {
+      ok: true as const,
+      data: { reaction: await this.reactions.change(identity.user.id, payload, added) },
+    };
+  }
 
   async subscribe(
     socket: AuthenticatedSocket,
@@ -65,7 +75,7 @@ export class ChannelChatHandlers {
     payload: SendMessagePayload,
   ): Promise<Ack<{ message: MessageView }>> {
     const text = payload.text.trim();
-    if (text.length === 0 || text.length > MESSAGE_MAX_LENGTH) {
+    if ((text.length === 0 && !payload.attachmentIds?.length) || text.length > MESSAGE_MAX_LENGTH) {
       return {
         ok: false,
         errorCode: "INVALID_MESSAGE",
@@ -92,8 +102,10 @@ export class ChannelChatHandlers {
       authorId: identity.user.id,
       text,
       replyToId: payload.replyToId,
+      attachmentIds: payload.attachmentIds,
+      clientNonce: payload.clientNonce,
     });
-    const view = this.presenter.toView(stored, payload.clientNonce ?? null);
+    const view = await this.presenter.enriched(stored, payload.clientNonce ?? null);
     this.broadcaster.messageCreated(view);
     return { ok: true, data: { message: view } };
   }

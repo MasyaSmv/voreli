@@ -127,7 +127,7 @@ describe("direct message realtime", () => {
       { conversationId, text: "hello by username", clientNonce: "direct-nonce-1" },
     );
     expect(first.ok).toBe(true);
-    expect((await incoming).text).toBe("hello by username");
+    expect((await incoming).body).toEqual({ kind: "text", text: "hello by username" });
 
     const retried: Ack<{ message: MessageView }> = await aliceSocket.emitWithAck(
       ClientEvent.DirectSendMessage,
@@ -160,7 +160,7 @@ describe("direct message realtime", () => {
       .expect(200);
     await expect(updated).resolves.toMatchObject({
       id: reply.data.message.id,
-      text: "edited direct reply",
+      body: { kind: "text", text: "edited direct reply" },
     });
 
     const deleted = waitFor<DirectMessageDeletedEvent>(bobSocket, ServerEvent.DirectMessageDeleted);
@@ -178,7 +178,10 @@ describe("direct message realtime", () => {
       .set("Authorization", `Bearer ${bobToken}`)
       .expect(200);
     expect(conversationsBefore.body[0].unreadCount).toBe(1);
-    expect(conversationsBefore.body[0].lastMessage.text).toBe("hello by username");
+    expect(conversationsBefore.body[0].lastMessage.body).toEqual({
+      kind: "text",
+      text: "hello by username",
+    });
 
     const read: Ack<null> = await bobSocket.emitWithAck(ClientEvent.DirectMarkRead, {
       conversationId,

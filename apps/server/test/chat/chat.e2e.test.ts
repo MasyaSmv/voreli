@@ -5,6 +5,7 @@ import {
   ClientEvent,
   DEFAULT_EVERYONE_PERMISSIONS,
   type MessageView,
+  type ReactionUpdatedEvent,
   Permission,
   REFRESH_COOKIE,
   serializePermissions,
@@ -371,9 +372,63 @@ describe("realtime chat", () => {
     expect(ack.ok).toBe(true);
 
     const received = await incoming;
-    expect(received.text).toBe("hello from alice");
+    expect(received.body).toEqual({ kind: "text", text: "hello from alice" });
     expect(received.author.id).toBe(alice.id);
     expect(received.clientNonce).toBe("nonce-1");
+  });
+
+  it("broadcasts idempotent reactions and permits own removal after AddReactions is revoked", async () => {
+    const sender = connect(aliceToken);
+    const viewer = connect(bobToken);
+    await Promise.all([connected(sender), connected(viewer)]);
+    await viewer.emitWithAck(ClientEvent.Subscribe, { channelId });
+    const sent = await sender.emitWithAck(ClientEvent.SendMessage, {
+      channelId,
+      text: "reaction target",
+      clientNonce: "reaction-target",
+    });
+    const messageId = sent.data.message.id as string;
+    const payload = { channelId, messageId, emoji: "👍" };
+    const broadcast = waitFor<ReactionUpdatedEvent>(sender, ServerEvent.ReactionUpdated);
+    await sender.emitWithAck(ClientEvent.Subscribe, { channelId });
+    expect((await viewer.emitWithAck(ClientEvent.AddReaction, payload)).data.reaction.count).toBe(
+      1,
+    );
+    expect(await broadcast).toMatchObject({
+      ...payload,
+      count: 1,
+      changedByUserId: bob.id,
+      added: true,
+    });
+    expect((await viewer.emitWithAck(ClientEvent.AddReaction, payload)).data.reaction.count).toBe(
+      1,
+    );
+    const ownerToken = await loginAsOwner();
+    await request(harness.app.getHttpServer())
+      .put(`/channels/${channelId}/overrides`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({
+        memberId: bob.memberId,
+        allow: "0",
+        deny: serializePermissions(Permission.AddReactions),
+      })
+      .expect(204);
+    expect(
+      await viewer.emitWithAck(ClientEvent.AddReaction, { ...payload, emoji: "❤️" }),
+    ).toMatchObject({ ok: false, errorCode: "MISSING_PERMISSION" });
+    expect(
+      (await viewer.emitWithAck(ClientEvent.RemoveReaction, payload)).data.reaction.count,
+    ).toBe(0);
+    expect(
+      (await viewer.emitWithAck(ClientEvent.RemoveReaction, payload)).data.reaction.count,
+    ).toBe(0);
+    expect(
+      await viewer.emitWithAck(ClientEvent.AddReaction, { ...payload, emoji: "abc" }),
+    ).toMatchObject({ ok: false, errorCode: "INVALID_REACTION" });
+    await request(harness.app.getHttpServer())
+      .delete(`/channels/${channelId}/overrides/${bob.memberId}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(204);
   });
 
   it("echoes the sender's nonce back so an optimistic copy can be replaced", async () => {
@@ -617,7 +672,7 @@ describe("realtime chat", () => {
 
     const event = await updated;
     expect(event.id).toBe(messageId);
-    expect(event.text).toBe("after the edit");
+    expect(event.body).toEqual({ kind: "text", text: "after the edit" });
   });
 
   it("delivers a deletion made over HTTP to everyone subscribed to the channel", async () => {
