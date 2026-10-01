@@ -61,7 +61,7 @@ export class MessageHistoryService {
     const messages = await this.prisma.db.message.findMany({
       where: {
         ...container,
-        deletedAt: null,
+
         ...(cursor
           ? {
               OR: [

@@ -8,7 +8,7 @@ import {
   type SubscribePayload,
   type TypingPayload,
 } from "@voreli/shared";
-import { IsOptional, IsString, Length } from "class-validator";
+import { ArrayMaxSize, ArrayUnique, IsArray, IsOptional, IsString, Length } from "class-validator";
 
 const ID_MAX_LENGTH = 64;
 const CLIENT_NONCE_MAX_LENGTH = 128;
@@ -20,8 +20,16 @@ export class ChannelPayloadDto implements SubscribePayload, TypingPayload {
 }
 
 export class SendMessageDto extends ChannelPayloadDto implements SendMessagePayload {
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @Length(1, ID_MAX_LENGTH, { each: true })
+  attachmentIds?: string[];
+
   @IsString()
-  @Length(1, MESSAGE_MAX_LENGTH)
+  @Length(0, MESSAGE_MAX_LENGTH)
   text!: string;
 
   @IsOptional()
@@ -70,4 +78,9 @@ export class DirectMarkReadDto extends DirectConversationDto implements DirectMa
   @IsString()
   @Length(1, ID_MAX_LENGTH)
   messageId!: string;
+}
+
+export class ReactionDto extends ChannelPayloadDto {
+  @IsString() @Length(1, 64) messageId!: string;
+  @IsString() @Length(1, 32) emoji!: string;
 }

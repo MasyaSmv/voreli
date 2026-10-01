@@ -13,6 +13,8 @@ export function ChatPanel({ channel }: { readonly channel: ChannelView | null })
 
   return (
     <ConversationSurface
+      key={channel.id}
+      rich
       ariaLabel={t("chat.channelLabel", { channel: channel.name })}
       icon="hash"
       title={channel.name}

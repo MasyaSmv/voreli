@@ -12,6 +12,8 @@ export const ClientEvent = {
   Subscribe: "channel:subscribe",
   Unsubscribe: "channel:unsubscribe",
   SendMessage: "message:send",
+  AddReaction: "reaction:add",
+  RemoveReaction: "reaction:remove",
   TypingStart: "typing:start",
   MarkRead: "channel:read",
   DirectSubscribe: "dm:subscribe",
@@ -25,6 +27,7 @@ export const ClientEvent = {
 /** Events the server sends. */
 export const ServerEvent = {
   MessageNew: "message:new",
+  ReactionUpdated: "reaction:updated",
   MessageUpdated: "message:updated",
   MessageDeleted: "message:deleted",
   Typing: "typing",
@@ -52,14 +55,55 @@ export interface MessageAuthor {
   readonly avatarUrl: string | null;
 }
 
+export type MessageBodyView =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "call"; readonly call: CallEventContentV1 };
+
+export interface MessageReplyPreview {
+  readonly id: string;
+  readonly author: MessageAuthor | null;
+  readonly textPreview: string;
+  readonly deleted: boolean;
+}
+
+export interface AttachmentView {
+  readonly id: string;
+  readonly name: string;
+  readonly mime: string;
+  readonly byteSize: number;
+  readonly width: number | null;
+  readonly height: number | null;
+  readonly thumbnailPath: string | null;
+}
+
+export interface ReactionSummary {
+  readonly emoji: string;
+  readonly count: number;
+  readonly reactedByCurrentUser: boolean;
+}
+
+export interface ReactionPayload {
+  readonly channelId: string;
+  readonly messageId: string;
+  readonly emoji: string;
+}
+
+export interface ReactionUpdatedEvent extends ReactionPayload {
+  readonly count: number;
+  readonly changedByUserId: string;
+  readonly added: boolean;
+}
+
 export interface MessageView {
   readonly id: string;
   readonly channelId: string | null;
   readonly directConversationId: string | null;
   readonly author: MessageAuthor;
-  readonly text: string;
-  readonly contentSchema: string;
-  readonly callEvent: CallEventContentV1 | null;
+  readonly body: MessageBodyView;
+  readonly deletedAt: string | null;
+  readonly reply: MessageReplyPreview | null;
+  readonly attachments: readonly AttachmentView[];
+  readonly reactions: readonly ReactionSummary[];
   readonly replyToId: string | null;
   readonly createdAt: string;
   readonly editedAt: string | null;
@@ -75,6 +119,7 @@ export interface SubscribePayload {
 }
 
 export interface SendMessagePayload {
+  readonly attachmentIds?: readonly string[];
   readonly channelId: string;
   readonly text: string;
   readonly replyToId?: string;

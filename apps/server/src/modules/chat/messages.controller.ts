@@ -5,14 +5,12 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Inject,
   Param,
   Patch,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import {
-  hasPermission,
   type MessagePage,
   type MessageView,
   Permission,
@@ -24,18 +22,12 @@ import { type AuthContext, CurrentAuth } from "../auth/current-user.decorator.js
 import { CurrentPermissions } from "../permissions/current-permissions.decorator.js";
 import { type PermissionContext, PermissionGuard } from "../permissions/permission.guard.js";
 import { RequirePermission } from "../permissions/require-permission.decorator.js";
-import {
-  PERMISSION_RESOLVER,
-  type PermissionResolverContract,
-} from "../permissions/permission-resolver.contract.js";
 import { EditMessageDto, HistoryQueryDto } from "./dto/message.dto.js";
 import { MessagePresenter } from "./message-presenter.js";
 import { MessageHistoryService } from "./message-history.service.js";
 import { MessageService } from "./message.service.js";
-import { NotMessageAuthorError } from "./errors/chat-errors.js";
 import { UnreadService } from "./unread.service.js";
-import { ResourceNotVisibleError } from "../permissions/errors/permission-errors.js";
-import { DirectConversationService } from "../relationships/direct-conversation.service.js";
+import { MessageModificationPolicy } from "./message-modification.policy.js";
 
 /**
  * History and message edits over plain HTTP. Realtime delivery is the gateway's job; this
@@ -49,14 +41,14 @@ export class MessagesController {
     private readonly historyReader: MessageHistoryService,
     private readonly unread: UnreadService,
     private readonly presenter: MessagePresenter,
-    private readonly directConversations: DirectConversationService,
-    @Inject(PERMISSION_RESOLVER) private readonly permissions: PermissionResolverContract,
+    private readonly modification: MessageModificationPolicy,
   ) {}
 
   @Get("channels/:channelId/messages")
   @UseGuards(PermissionGuard)
   @RequirePermission(Permission.ViewChannel)
   async history(
+    @CurrentAuth() auth: AuthContext,
     @Param("channelId") channelId: string,
     @Query() query: HistoryQueryDto,
   ): Promise<MessagePage> {
@@ -67,7 +59,7 @@ export class MessagesController {
     });
 
     return {
-      messages: page.messages.map((message) => this.presenter.toView(message)),
+      messages: await this.presenter.page(page.messages, auth.user.id),
       nextCursor: page.nextCursor,
     };
   }
@@ -86,9 +78,13 @@ export class MessagesController {
     @Body() dto: EditMessageDto,
     @CurrentAuth() auth: AuthContext,
   ): Promise<MessageView> {
-    await this.assertMayModify(messageId, auth.user.id);
+    await this.modification.assertMayModify(messageId, auth.user.id);
 
-    return this.presenter.toView(await this.messages.edit(messageId, dto.text));
+    return this.presenter.enriched(
+      await this.messages.edit(messageId, dto.text),
+      null,
+      auth.user.id,
+    );
   }
 
   @Delete("messages/:messageId")
@@ -97,36 +93,7 @@ export class MessagesController {
     @Param("messageId") messageId: string,
     @CurrentAuth() auth: AuthContext,
   ): Promise<void> {
-    await this.assertMayModify(messageId, auth.user.id);
+    await this.modification.assertMayModify(messageId, auth.user.id);
     await this.messages.remove(messageId);
-  }
-
-  /**
-   * Messages are addressed by their own id, so the guard cannot resolve the channel from
-   * the route. The check happens here instead — the one place in the codebase where a
-   * permission is verified outside PermissionGuard, and it is confined to two routes.
-   */
-  private async assertMayModify(messageId: string, userId: string): Promise<void> {
-    const message = await this.historyReader.byId(messageId);
-    if (message.directConversationId !== null) {
-      await this.directConversations.participant(message.directConversationId, userId);
-      if (message.authorId !== userId) throw new NotMessageAuthorError(messageId);
-      return;
-    }
-
-    if (message.channelId === null) throw new ResourceNotVisibleError("Message", messageId);
-    const resolved = await this.permissions.forChannel(userId, message.channelId);
-
-    if (!resolved || !hasPermission(resolved.channelPermissions, Permission.ViewChannel)) {
-      throw new ResourceNotVisibleError("Message", messageId);
-    }
-
-    if (message.authorId === userId) {
-      return;
-    }
-
-    if (!hasPermission(resolved.channelPermissions, Permission.ManageMessages)) {
-      throw new NotMessageAuthorError(messageId);
-    }
   }
 }

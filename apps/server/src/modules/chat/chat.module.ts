@@ -1,3 +1,8 @@
+import { MessageModificationPolicy } from "./message-modification.policy.js";
+import { ReactionService } from "./reaction.service.js";
+import { MessageCompositionService } from "./message-composition.service.js";
+import { UploadsModule } from "../uploads/uploads.module.js";
+import { MessageReadModel } from "./message-read-model.js";
 import { Module } from "@nestjs/common";
 
 import { RateLimitModule } from "../../common/rate-limit/rate-limit.module.js";
@@ -21,10 +26,18 @@ import { MessagesController } from "./messages.controller.js";
 import { UnreadService } from "./unread.service.js";
 
 @Module({
-  imports: [AuthModule, PermissionsModule, RelationshipsModule, RealtimeModule, RateLimitModule],
+  imports: [
+    UploadsModule,
+    AuthModule,
+    PermissionsModule,
+    RelationshipsModule,
+    RealtimeModule,
+    RateLimitModule,
+  ],
   controllers: [DirectMessagesController, MessagesController],
   providers: [
     ChatGateway,
+    ReactionService,
     ChannelChatHandlers,
     ChatBroadcaster,
     ChatRoomAccessService,
@@ -34,7 +47,10 @@ import { UnreadService } from "./unread.service.js";
     DirectUnreadService,
     MessageHistoryService,
     MessageService,
+    MessageModificationPolicy,
     MessagePresenter,
+    MessageReadModel,
+    MessageCompositionService,
     UnreadService,
   ],
   exports: [ChatBroadcaster, MessagePresenter],

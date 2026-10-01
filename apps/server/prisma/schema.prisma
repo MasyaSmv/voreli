@@ -46,6 +46,8 @@ model User {
   avatarUpload         Upload?                  @relation("UserAvatar", fields: [avatarUploadId], references: [id], onDelete: SetNull)
 
   @@map("users")
+  reactions MessageReaction[]
+
 }
 
 enum ContactAudience {
@@ -361,8 +363,10 @@ model Message {
   directReadMarks    DirectConversationRead[] @relation("DirectConversationLastRead")
   callHistory        DirectCall?              @relation("DirectCallHistoryMessage")
   attachments        Attachment[]
+  reactions          MessageReaction[]
 
   @@unique([directConversationId, authorId, clientNonce])
+  @@unique([channelId, authorId, clientNonce])
   // Cursor pagination of channel history walks this index backwards. Never OFFSET.
   @@index([channelId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([directConversationId, createdAt(sort: Desc), id(sort: Desc)])
@@ -478,4 +482,17 @@ model Invite {
 
   @@index([serverId])
   @@map("invites")
+}
+
+model MessageReaction {
+  messageId String
+  userId String
+  emoji String
+  createdAt DateTime @default(now())
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([messageId, userId, emoji])
+  @@index([messageId, emoji])
+  @@index([userId])
+  @@map("message_reactions")
 }

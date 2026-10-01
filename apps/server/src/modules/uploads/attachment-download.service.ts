@@ -1,3 +1,4 @@
+import { AttachmentNotFoundError } from "./errors/attachment-not-found.error.js";
 import { Inject, Injectable } from "@nestjs/common";
 
 import { OBJECT_STORAGE, type ObjectStorage } from "../../infra/storage/object-storage.js";
@@ -6,6 +7,11 @@ import type { AccessibleAttachment } from "./attachment-access.policy.js";
 @Injectable()
 export class AttachmentDownloadService {
   constructor(@Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage) {}
+
+  previewUrl(attachment: AccessibleAttachment): Promise<string> {
+    if (!attachment.thumbnailKey) throw new AttachmentNotFoundError("preview");
+    return this.storage.presignDownload(attachment.thumbnailKey, "preview.webp", "image/webp", 300);
+  }
 
   redirectUrl(attachment: AccessibleAttachment): Promise<string> {
     // Originals are downloads, including images. Only re-encoded previews may be inline.

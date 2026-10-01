@@ -28,7 +28,7 @@ export function useDirectChat(conversationId: string | null) {
               accessRevoked: ServerEvent.DirectAccessRevoked,
               markRead: ClientEvent.DirectMarkRead,
             },
-            fetchHistory: () => fetchDirectHistory(conversationId),
+            fetchHistory: (before?: string) => fetchDirectHistory(conversationId, before),
             payload: (extra = {}) => ({ conversationId, ...extra }),
             messageBelongs: (message: MessageView) =>
               message.directConversationId === conversationId,

@@ -18,7 +18,7 @@ export class HistoryQueryDto {
 
 export class EditMessageDto {
   @IsString()
-  @Length(1, MESSAGE_MAX_LENGTH)
+  @Length(0, MESSAGE_MAX_LENGTH)
   text!: string;
 }
 

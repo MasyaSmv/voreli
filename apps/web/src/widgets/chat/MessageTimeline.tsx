@@ -1,3 +1,6 @@
+import { MessageActions } from "./MessageActions";
+import { MessageReactions } from "../../features/message-reaction/MessageReactions";
+import { MessageAttachments } from "./MessageAttachments";
 import type { MessageView } from "@voreli/shared";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,7 +14,15 @@ import {
 import { formatCallDuration } from "../../shared/lib/call-duration";
 import { Avatar } from "../../shared/ui/Avatar";
 
-export function MessageTimeline({ messages }: { readonly messages: readonly MessageView[] }) {
+interface TimelineActions {
+  readonly onReply?: ((message: MessageView) => void) | undefined;
+  readonly onReveal?: ((messageId: string) => Promise<void>) | undefined;
+}
+export function MessageTimeline({
+  messages,
+  onReply,
+  onReveal,
+}: { readonly messages: readonly MessageView[] } & TimelineActions) {
   const { i18n } = useTranslation();
   return (
     <ol className="px-5 py-5">
@@ -20,7 +31,12 @@ export function MessageTimeline({ messages }: { readonly messages: readonly Mess
           {index === 0 || !sameLocalDay(messages[index - 1]?.createdAt ?? "", message.createdAt) ? (
             <MessageDay value={message.createdAt} locale={i18n.resolvedLanguage} />
           ) : null}
-          <MessageRow message={message} locale={i18n.resolvedLanguage} />
+          <MessageRow
+            message={message}
+            locale={i18n.resolvedLanguage}
+            onReply={onReply}
+            onReveal={onReveal}
+          />
         </Fragment>
       ))}
     </ol>
@@ -30,14 +46,19 @@ export function MessageTimeline({ messages }: { readonly messages: readonly Mess
 function MessageRow({
   message,
   locale,
+  onReply,
+  onReveal,
 }: {
   readonly message: MessageView;
   readonly locale: string | undefined;
-}) {
-  if (message.callEvent) return <CallHistoryRow message={message} locale={locale} />;
+} & TimelineActions) {
+  if (message.body.kind === "call") return <CallHistoryRow message={message} locale={locale} />;
 
   return (
-    <li className="group flex gap-3 rounded-xl px-2 py-2.5 transition hover:bg-panel/55">
+    <li
+      id={`message-${message.id}`}
+      className="group flex gap-3 rounded-xl px-2 py-2.5 transition hover:bg-panel/55"
+    >
       <Avatar name={message.author.displayName} url={message.author.avatarUrl} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
@@ -52,9 +73,32 @@ function MessageRow({
             {formatMessageTime(message.createdAt, locale)}
           </time>
         </div>
+        {message.reply && (
+          <button
+            className="block border-l-2 border-accent pl-2 text-xs text-muted"
+            onClick={() => void onReveal?.(message.reply?.id ?? "")}
+          >
+            <strong>{message.reply.author?.displayName}</strong>{" "}
+            {message.reply.deleted ? "Сообщение удалено" : message.reply.textPreview}
+          </button>
+        )}
         <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-ink-soft">
-          {message.text}
+          {message.deletedAt
+            ? "Сообщение удалено"
+            : message.body.kind === "text"
+              ? message.body.text
+              : ""}
         </p>
+        <MessageActions message={message} />
+        {!message.deletedAt && <MessageAttachments attachments={message.attachments} />}
+        {!message.deletedAt && !message.id.startsWith("pending:") && message.channelId && (
+          <MessageReactions message={message} />
+        )}
+        {onReply && !message.id.startsWith("pending:") && (
+          <button className="text-xs text-muted" onClick={() => onReply(message)}>
+            Ответить
+          </button>
+        )}
       </div>
     </li>
   );
@@ -68,7 +112,7 @@ function CallHistoryRow({
   readonly locale: string | undefined;
 }) {
   const { t } = useTranslation();
-  const event = message.callEvent;
+  const event = message.body.kind === "call" ? message.body.call : null;
   if (!event) return null;
   const label =
     event.outcome === "completed"

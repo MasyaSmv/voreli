@@ -12,6 +12,7 @@ import { AttachmentNotFoundError } from "./errors/attachment-not-found.error.js"
 
 export interface AccessibleAttachment {
   readonly objectKey: string;
+  readonly thumbnailKey: string | null;
   readonly originalName: string;
 }
 
@@ -33,6 +34,7 @@ export class AttachmentAccessPolicy {
             purpose: true,
             status: true,
             objectKey: true,
+            thumbnailKey: true,
             originalName: true,
           },
         },
@@ -70,6 +72,10 @@ export class AttachmentAccessPolicy {
       throw new AttachmentNotFoundError(attachmentId);
     }
 
-    return { objectKey: upload.objectKey, originalName: upload.originalName };
+    return {
+      objectKey: upload.objectKey,
+      originalName: upload.originalName,
+      thumbnailKey: upload.thumbnailKey,
+    };
   }
 }

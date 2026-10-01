@@ -19,8 +19,9 @@ const serverEnvironment = {
   TRUSTED_PROXY_HOPS: "1",
   MEDIASOUP_ANNOUNCED_IP: "127.0.0.1",
   MEDIASOUP_LISTEN_IP: "0.0.0.0",
-  MEDIASOUP_RTC_MIN_PORT: "41000",
-  MEDIASOUP_RTC_MAX_PORT: "41010",
+  // Keep the test listener below Linux's ephemeral TCP range to avoid runner port collisions.
+  MEDIASOUP_RTC_MIN_PORT: "20000",
+  MEDIASOUP_RTC_MAX_PORT: "20010",
   MEDIASOUP_MAX_WORKERS: "1",
 };
 

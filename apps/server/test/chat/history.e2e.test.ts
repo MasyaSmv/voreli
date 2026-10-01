@@ -98,7 +98,7 @@ describe("message history and unread counts", () => {
       .expect(200);
 
     expect(page.body.messages).toHaveLength(3);
-    expect(page.body.messages[0].text).toBe("message 2");
+    expect(page.body.messages[0].body.text).toBe("message 2");
     expect(page.body.nextCursor).toBeNull();
   });
 
@@ -204,7 +204,7 @@ describe("message history and unread counts", () => {
       .send({ text: "edited by author" })
       .expect(200);
 
-    expect(edited.body.text).toBe("edited by author");
+    expect(edited.body.body.text).toBe("edited by author");
     expect(edited.body.editedAt).toEqual(expect.any(String));
 
     const refused = await http()
@@ -240,6 +240,12 @@ describe("message history and unread counts", () => {
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(200);
 
-    expect(page.body.messages).toHaveLength(0);
+    expect(page.body.messages).toHaveLength(1);
+    expect(page.body.messages[0]).toMatchObject({
+      deletedAt: expect.any(String),
+      body: { kind: "text", text: "" },
+      attachments: [],
+      reactions: [],
+    });
   });
 });

@@ -39,6 +39,7 @@ export default defineConfig(({ mode }) => {
         "/messages": { target: proxyTarget, changeOrigin: true },
         "/invites": { target: proxyTarget, changeOrigin: true },
         "/users": { target: proxyTarget, changeOrigin: true },
+        "/attachments": { target: proxyTarget, changeOrigin: true },
         "/uploads": { target: proxyTarget, changeOrigin: true },
         "/relationships": { target: proxyTarget, changeOrigin: true },
         "/friend-requests": { target: proxyTarget, changeOrigin: true },

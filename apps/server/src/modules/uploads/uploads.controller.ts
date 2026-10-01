@@ -1,3 +1,4 @@
+import { UploadPreviewService } from "./upload-preview.service.js";
 import { Body, Controller, Get, Param, Post, Put, Res, UseGuards } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import type { PublicUser, ReservedUploadResponse, UploadView } from "@voreli/shared";
@@ -14,7 +15,20 @@ import { UploadService } from "./upload.service.js";
 @Controller("uploads")
 @UseGuards(AccessTokenGuard)
 export class UploadsController {
-  constructor(private readonly uploads: UploadService) {}
+  constructor(
+    private readonly uploads: UploadService,
+    private readonly previews: UploadPreviewService,
+  ) {}
+
+  @Get(":uploadId/preview")
+  async preview(
+    @CurrentAuth() auth: AuthContext,
+    @Param("uploadId") uploadId: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ url: string }> {
+    response.set("Cache-Control", "private, no-store");
+    return { url: await this.previews.url(uploadId, auth.user.id) };
+  }
 
   @Post("reserve")
   @Throttle({ default: RATE_LIMITS.uploadReserve })
