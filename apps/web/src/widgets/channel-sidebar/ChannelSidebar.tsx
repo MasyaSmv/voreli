@@ -30,7 +30,7 @@ export function ChannelSidebar({
   const uncategorised = server.channels.filter((channel) => channel.categoryId === null);
 
   return (
-    <aside className="flex w-[17rem] shrink-0 flex-col border-r border-line bg-panel">
+    <aside className="flex w-full shrink-0 flex-col border-r border-line bg-panel md:w-[17rem]">
       <ServerHeader server={server} onChannelCreated={onSelect} />
 
       <nav

@@ -28,6 +28,10 @@ export class ScreenCaptureSource {
     this.stopCurrent();
   }
 
+  previewVideoTrack(): MediaStreamTrack | null {
+    return this.stream?.getVideoTracks()[0] ?? null;
+  }
+
   private stopCurrent(): void {
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = null;

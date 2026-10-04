@@ -190,6 +190,10 @@ class VoiceSession {
     return this.screenViewer.attachVideo(element);
   }
 
+  attachOwnScreenPreview(element: HTMLVideoElement | null): void {
+    this.screenShare.attachPreview(element);
+  }
+
   setScreenShareLayer(spatialLayer: 0 | 1 | 2): Promise<void> {
     return this.run(() => this.screenViewer.setPreferredLayer(spatialLayer));
   }

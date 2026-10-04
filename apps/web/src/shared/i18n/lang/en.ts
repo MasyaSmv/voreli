@@ -54,6 +54,9 @@ export const en = {
   },
   workspace: {
     servers: "Servers",
+    channels: "Channels",
+    conversation: "Conversation",
+    mobileNavigation: "Navigation",
     home: "Voreli home",
     serverMenu: "{{server}} server menu",
     noServerActions: "No actions available",
@@ -72,6 +75,7 @@ export const en = {
     welcomeDescription: "Open a text channel on the left or join a voice channel.",
   },
   home: {
+    backToContacts: "Contacts",
     title: "Your spaces",
     description: "Choose a server to open its channels and continue the conversation.",
     openServer: "Open server",
@@ -215,6 +219,8 @@ export const en = {
       stop: "Stop sharing",
       available: "Screen shares",
       yours: "You are sharing your screen",
+      preview: "Preview of your screen",
+      live: "Your screen is live",
       participant: "{{id}}'s screen",
       watch: "Watch",
       watching: "Watching",

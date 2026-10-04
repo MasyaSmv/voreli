@@ -16,6 +16,7 @@ import {
   viewerDownlinkQdisc,
   waitForInboundVideoDimensions,
   waitForLiveVideo,
+  waitForRenderedVideos,
 } from "./support/screen-share-browser.js";
 import { closeContext, voiceContext, voicePeerConnectionCount } from "./support/voice-browser.js";
 import {
@@ -43,7 +44,8 @@ test("two screen shares are watched selectively and track end removes only its o
   const alice = await aliceContext.newPage();
   const bob = await bobContext.newPage();
   const viewer = await viewerContext.newPage();
-  if (screenShareNetemEnabled) await viewer.setViewportSize({ width: 390, height: 844 });
+  await bob.setViewportSize({ width: 390, height: 844 });
+  await viewer.setViewportSize({ width: 390, height: 844 });
 
   try {
     await Promise.all([
@@ -52,12 +54,22 @@ test("two screen shares are watched selectively and track end removes only its o
       login(viewer, screenViewerUsername),
     ]);
     for (const page of [alice, bob, viewer]) {
+      if (page === bob || page === viewer) {
+        await page.getByRole("button", { name: "Каналы", exact: true }).click();
+      }
       await page.getByRole("button", { name: /Голосовой/ }).click();
+      if (page === viewer) {
+        await expect
+          .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+          .toBeLessThanOrEqual(0);
+      }
       await page.getByRole("button", { name: "Подключиться" }).click();
       await expect(page.getByText("Голос подключён")).toBeVisible();
     }
 
     await alice.getByRole("button", { name: "Показать экран" }).click();
+    await expect(alice.locator('video[aria-label="Предпросмотр вашего экрана"]')).toBeVisible();
+    await waitForLiveVideo(alice);
     await expect(bob.getByText(`Экран участника ${aliceUserId.slice(0, 6)}`)).toBeVisible();
     await expect(bob.locator("video")).toHaveCount(0);
     await expect.poll(() => inboundVideoBytes(bob)).toBe(0);
@@ -72,6 +84,41 @@ test("two screen shares are watched selectively and track end removes only its o
     }
 
     await bob.getByRole("button", { name: "Показать экран" }).click();
+    await expect(bob.locator('video[aria-label="Предпросмотр вашего экрана"]')).toBeVisible();
+    const bobShareForAlice = alice
+      .getByRole("listitem")
+      .filter({ hasText: `Экран участника ${bobUserId.slice(0, 6)}` });
+    await bobShareForAlice.getByRole("button", { name: "Смотреть" }).click();
+    await expect(alice.locator("video")).toHaveCount(2);
+    await expect.poll(() => inboundVideoBytes(alice)).toBeGreaterThan(0);
+    await waitForRenderedVideos(alice, 2);
+    if (screenShareNetemEnabled) {
+      const aliceShareForBobAgain = bob
+        .getByRole("listitem")
+        .filter({ hasText: `Экран участника ${aliceUserId.slice(0, 6)}` });
+      await aliceShareForBobAgain.getByRole("button", { name: "Смотреть" }).click();
+    }
+    await expect(bob.locator("video")).toHaveCount(2);
+    await expect.poll(() => inboundVideoBytes(bob)).toBeGreaterThan(0);
+    await waitForRenderedVideos(bob, 2);
+    await expect
+      .poll(() =>
+        bob.locator("video").evaluateAll((videos) =>
+          videos.every((video) => {
+            const bounds = video.getBoundingClientRect();
+            return bounds.top >= 0 && bounds.top < window.innerHeight;
+          }),
+        ),
+      )
+      .toBe(true);
+    await test.info().attach("mobile-two-sharers", {
+      body: await bob.screenshot(),
+      contentType: "image/png",
+    });
+    await test.info().attach("two-sharers-desktop", {
+      body: await alice.screenshot(),
+      contentType: "image/png",
+    });
     const bobShare = viewer
       .getByRole("listitem")
       .filter({ hasText: `Экран участника ${bobUserId.slice(0, 6)}` });
@@ -82,6 +129,11 @@ test("two screen shares are watched selectively and track end removes only its o
       .filter({ hasText: `Экран участника ${aliceUserId.slice(0, 6)}` });
     await aliceShare.getByRole("button", { name: "Смотреть" }).click();
     await waitForLiveVideo(viewer);
+    await waitForRenderedVideos(viewer, 1);
+    await test.info().attach("mobile-screen-viewer", {
+      body: await viewer.screenshot(),
+      contentType: "image/png",
+    });
     await expect.poll(() => outboundVideoTrackCount(alice)).toBe(1);
 
     if (screenShareNetemEnabled) {
@@ -146,6 +198,8 @@ test("two screen shares are watched selectively and track end removes only its o
     await expect(voicePeerConnectionCount(viewer)).resolves.toBe(viewerPeerConnections);
 
     await stopCapturedDisplay(alice);
+    await expect(alice.locator('video[aria-label="Предпросмотр вашего экрана"]')).toHaveCount(0);
+    await expect(alice.locator("video")).toHaveCount(1);
     await expect(viewer.getByText(`Экран участника ${aliceUserId.slice(0, 6)}`)).not.toBeVisible();
     await expect(bobShare).toBeVisible();
     await waitForLiveVideo(viewer);

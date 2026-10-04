@@ -75,7 +75,7 @@ export function FriendsPanel({
   }, [refresh]);
 
   return (
-    <aside className="flex w-[19rem] shrink-0 flex-col border-r border-line bg-panel">
+    <aside className="flex w-full shrink-0 flex-col border-r border-line bg-panel md:w-[19rem]">
       <ContactSearch
         resetKey={searchResetKey}
         onMessage={(username) => open.mutate(username)}

@@ -54,7 +54,9 @@ test("direct call rings, carries RTP and resumes the same call after a network b
     await login(bob, bobUsername);
     await login(bobSecond, bobUsername);
     await alice.getByRole("button", { name: "Главная Voreli" }).click();
+    await bob.getByRole("button", { name: "Серверы", exact: true }).click();
     await bob.getByRole("button", { name: "Главная Voreli" }).click();
+    await bobSecond.getByRole("button", { name: "Серверы", exact: true }).click();
     await bobSecond.getByRole("button", { name: "Главная Voreli" }).click();
     await alice.getByRole("button", { name: new RegExp(`Bob.*@${bobUsername}`) }).click();
 

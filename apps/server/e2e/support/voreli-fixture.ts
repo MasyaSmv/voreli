@@ -114,5 +114,5 @@ export async function login(page: Page, username: string): Promise<void> {
     page.getByRole("button", { name: "Войти" }).click(),
   ]);
   expect(response.status(), await response.text()).toBe(200);
-  await expect(page.getByRole("heading", { name: "Voice e2e" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: textChannelName, exact: true })).toBeVisible();
 }

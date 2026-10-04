@@ -21,6 +21,7 @@ export function WorkspacePage() {
   const currentUser = useSession((state) => state.user);
   const [pickedServerId, setPickedServerId] = useState<string | null | undefined>(undefined);
   const [pickedChannelId, setPickedChannelId] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<"servers" | "channels" | "content">("content");
 
   useEffect(() => {
     if (currentUser) directCallSession.connect();
@@ -49,74 +50,141 @@ export function WorkspacePage() {
     server.data?.channels.find((channel) => channel.id === channelId) ?? null;
 
   return (
-    <div className="flex h-dvh min-w-[48rem] bg-canvas text-ink">
-      <ServerRail
-        servers={servers.data ?? []}
-        activeServerId={serverId}
-        onHome={() => {
-          setPickedServerId(null);
-          setPickedChannelId(null);
-        }}
-        onSelect={(selectedServerId) => {
-          setPickedServerId(selectedServerId);
-          setPickedChannelId(null);
-        }}
-      />
-
-      {servers.isPending ? <WorkspaceLoading /> : null}
-
-      {serverId === null && !servers.isPending ? (
-        <ServerHome
-          servers={servers.data ?? []}
-          onSelect={(selectedServerId) => setPickedServerId(selectedServerId)}
+    <div className="flex h-dvh w-full min-w-0 flex-col overflow-hidden bg-canvas pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-ink">
+      <nav
+        className="flex shrink-0 gap-1 border-b border-line bg-panel p-2 md:hidden"
+        aria-label={t("workspace.mobileNavigation")}
+      >
+        <MobileViewButton
+          label={t("workspace.servers")}
+          active={mobileView === "servers"}
+          onClick={() => setMobileView("servers")}
         />
-      ) : null}
-
-      {serverId !== null && server.data ? (
-        <ChannelSidebar
-          server={server.data}
-          unread={unread.data?.channels ?? []}
-          activeChannelId={channelId}
-          onSelect={(channel) => {
-            setPickedChannelId(channel.id);
-          }}
-          onLogout={() =>
-            void voiceSession
-              .leave()
-              .catch((error: unknown) => {
-                console.error("Failed to leave voice before logout", { error });
-              })
-              .then(() => logOut())
-          }
+        {serverId !== null ? (
+          <MobileViewButton
+            label={t("workspace.channels")}
+            active={mobileView === "channels"}
+            onClick={() => setMobileView("channels")}
+          />
+        ) : null}
+        <MobileViewButton
+          label={t("workspace.conversation")}
+          active={mobileView === "content"}
+          onClick={() => setMobileView("content")}
         />
-      ) : serverId !== null ? (
-        <nav className="flex w-[17rem] shrink-0 flex-col border-r border-line bg-panel px-5 py-5 text-sm text-muted">
-          <div className="h-6 w-32 animate-pulse rounded-lg bg-panel-hover" />
-          <div className="mt-8 space-y-3">
-            {servers.isPending ? (
-              <>
-                <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
-                <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
-                <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
-              </>
-            ) : (
-              <p className="leading-6">{t("workspace.noServers")}</p>
-            )}
+      </nav>
+      <div className="flex min-h-0 min-w-0 flex-1 bg-canvas text-ink">
+        <div
+          className={`${mobileView === "servers" ? "flex" : "hidden"} min-h-0 w-full md:flex md:w-auto`}
+        >
+          <ServerRail
+            servers={servers.data ?? []}
+            activeServerId={serverId}
+            onHome={() => {
+              setPickedServerId(null);
+              setPickedChannelId(null);
+              setMobileView("content");
+            }}
+            onSelect={(selectedServerId) => {
+              setPickedServerId(selectedServerId);
+              setPickedChannelId(null);
+              setMobileView("channels");
+            }}
+          />
+        </div>
+
+        {servers.isPending ? <WorkspaceLoading /> : null}
+
+        {serverId === null && !servers.isPending ? (
+          <div
+            className={`${mobileView === "content" ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 md:flex`}
+          >
+            <ServerHome
+              servers={servers.data ?? []}
+              onSelect={(selectedServerId) => {
+                setPickedServerId(selectedServerId);
+                setMobileView("channels");
+              }}
+            />
           </div>
-        </nav>
-      ) : null}
+        ) : null}
 
-      {serverId !== null ? (
-        <main className="flex min-w-0 flex-1 flex-col bg-canvas">
-          {activeChannel?.type === "VOICE" ? (
-            <VoicePanel channel={activeChannel} permissions={server.data?.permissions ?? "0"} />
-          ) : (
-            <ChatPanel channel={activeChannel} />
-          )}
-        </main>
-      ) : null}
-      <DirectCallOverlay />
+        {serverId !== null && server.data ? (
+          <div
+            className={`${mobileView === "channels" ? "flex" : "hidden"} min-h-0 w-full md:flex md:w-auto`}
+          >
+            <ChannelSidebar
+              server={server.data}
+              unread={unread.data?.channels ?? []}
+              activeChannelId={channelId}
+              onSelect={(channel) => {
+                setPickedChannelId(channel.id);
+                setMobileView("content");
+              }}
+              onLogout={() =>
+                void voiceSession
+                  .leave()
+                  .catch((error: unknown) => {
+                    console.error("Failed to leave voice before logout", { error });
+                  })
+                  .then(() => logOut())
+              }
+            />
+          </div>
+        ) : serverId !== null ? (
+          <nav
+            className={`${mobileView === "channels" ? "flex" : "hidden"} w-full shrink-0 flex-col border-r border-line bg-panel px-5 py-5 text-sm text-muted md:flex md:w-[17rem]`}
+          >
+            <div className="h-6 w-32 animate-pulse rounded-lg bg-panel-hover" />
+            <div className="mt-8 space-y-3">
+              {servers.isPending ? (
+                <>
+                  <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
+                  <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
+                  <div className="h-8 animate-pulse rounded-lg bg-panel-hover" />
+                </>
+              ) : (
+                <p className="leading-6">{t("workspace.noServers")}</p>
+              )}
+            </div>
+          </nav>
+        ) : null}
+
+        {serverId !== null ? (
+          <main
+            className={`${mobileView === "content" ? "flex" : "hidden"} min-w-0 flex-1 flex-col bg-canvas md:flex`}
+          >
+            {activeChannel?.type === "VOICE" ? (
+              <VoicePanel channel={activeChannel} permissions={server.data?.permissions ?? "0"} />
+            ) : (
+              <ChatPanel channel={activeChannel} />
+            )}
+          </main>
+        ) : null}
+        <DirectCallOverlay />
+      </div>
     </div>
+  );
+}
+
+function MobileViewButton({
+  label,
+  active,
+  onClick,
+}: {
+  readonly label: string;
+  readonly active: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+      className={`min-h-11 flex-1 rounded-xl px-2 text-xs font-semibold ${active ? "bg-accent text-white" : "text-muted"}`}
+    >
+      {label}
+    </button>
   );
 }
 

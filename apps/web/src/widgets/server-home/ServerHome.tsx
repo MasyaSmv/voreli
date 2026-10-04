@@ -18,11 +18,24 @@ export function ServerHome({
 
   return (
     <main className="flex min-w-0 flex-1 bg-canvas">
-      <FriendsPanel onOpen={setConversation} />
+      <div
+        className={`${conversation === null ? "flex" : "hidden"} min-w-0 flex-1 md:flex md:flex-none`}
+      >
+        <FriendsPanel onOpen={setConversation} />
+      </div>
       {conversation !== null ? (
-        <DirectMessagePanel conversation={conversation} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <button
+            type="button"
+            onClick={() => setConversation(null)}
+            className="min-h-11 shrink-0 border-b border-line bg-panel px-4 text-left text-sm font-semibold text-accent-bright md:hidden"
+          >
+            {t("home.backToContacts")}
+          </button>
+          <DirectMessagePanel conversation={conversation} />
+        </div>
       ) : (
-        <div className="min-w-0 flex-1 overflow-y-auto p-8">
+        <div className="hidden min-w-0 flex-1 overflow-y-auto p-8 md:block">
           <div className="mx-auto max-w-3xl">
             <BrandMark />
             <h1 className="mt-8 text-3xl font-bold tracking-[-0.04em] text-ink">
