@@ -1,0 +1,16 @@
+{$APP_DOMAIN} {
+	@api path /auth* /health* /servers* /channels* /categories* /roles* /members* /messages* /invites* /users* /attachments* /uploads* /relationships* /friend-requests* /friends* /blocks* /direct-conversations* /socket.io*
+	handle @api {
+		reverse_proxy 127.0.0.1:{$SERVER_PORT}
+	}
+
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+{$S3_DOMAIN} {
+	reverse_proxy 127.0.0.1:9000
+}

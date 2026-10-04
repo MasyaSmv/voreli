@@ -33,6 +33,7 @@ pnpm-debug.log*
 # env files: .env.example is the documented contract, keep it tracked
 .env*
 !.env.example
+!.env.production.example
 
 # AI agent rules, memory and session logs: local only, never committed
 AGENTS.md
