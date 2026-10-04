@@ -10,8 +10,11 @@ describe("S3ObjectStorage browser URLs", () => {
       validateEnv({
         DATABASE_URL: "postgresql://voreli:voreli@localhost:5432/voreli",
         JWT_SECRET: "a-secret-that-is-at-least-32-characters",
-        S3_ENDPOINT: "http://127.0.0.1:9000",
+        S3_ENDPOINT: process.env.S3_ENDPOINT ?? "http://127.0.0.1:9000",
         S3_PUBLIC_ENDPOINT: "https://storage.example.com",
+        S3_ACCESS_KEY: process.env.S3_ACCESS_KEY ?? "voreli",
+        S3_SECRET_KEY: process.env.S3_SECRET_KEY ?? "voreli-secret",
+        S3_BUCKET: process.env.S3_BUCKET ?? "voreli",
       }),
     );
     const storage = new S3ObjectStorage(config);
@@ -21,7 +24,7 @@ describe("S3ObjectStorage browser URLs", () => {
         await storage.presignDownload("avatars/test.webp", "test.webp", "image/webp", 60),
       );
       expect(signed.origin).toBe("https://storage.example.com");
-      expect(signed.pathname).toBe("/voreli/avatars/test.webp");
+      expect(signed.pathname).toBe(`/${config.get("S3_BUCKET")}/avatars/test.webp`);
       expect(signed.searchParams.has("X-Amz-Signature")).toBe(true);
     } finally {
       storage.onModuleDestroy();
