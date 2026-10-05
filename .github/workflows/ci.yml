@@ -10,6 +10,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  production-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate production Compose
+        run: |
+          RELEASE_TAG=ci docker compose --env-file .env.production.example \
+            -f compose.production.yml config --quiet
+          bash -n scripts/production/*.sh
+
+      - name: Build production images
+        run: |
+          docker build --target server --tag voreli-server:ci .
+          docker build --target web --tag voreli-web:ci .
+
+      - name: Check runtime tools and proxy configuration
+        run: |
+          docker run --rm --entrypoint apps/server/node_modules/.bin/prisma \
+            voreli-server:ci --version
+          docker run --rm --entrypoint node voreli-server:ci --input-type=module \
+            -e 'import * as mediasoup from "./apps/server/node_modules/mediasoup/node/lib/index.js"; const worker = await mediasoup.createWorker(); worker.close();'
+          docker run --rm --env APP_DOMAIN=chat.example.com \
+            --env S3_DOMAIN=storage.example.com --env SERVER_PORT=3000 \
+            --entrypoint caddy voreli-web:ci validate --config /etc/caddy/Caddyfile
+
   verify:
     runs-on: ubuntu-latest
 

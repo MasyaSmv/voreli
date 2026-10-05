@@ -44,8 +44,8 @@ export async function createVoiceTransports(
     iceCandidates: [...recvOptions.iceCandidates],
   });
 
-  bindSignaling(send, signaling, onError);
-  bindSignaling(recv, signaling, onError);
+  bindSignaling(send, "send", signaling, onError);
+  bindSignaling(recv, "recv", signaling, onError);
   bindProducing(send, signaling);
 
   return { send, recv };
@@ -58,6 +58,7 @@ export async function createVoiceTransports(
  */
 function bindSignaling(
   transport: types.Transport,
+  direction: "send" | "recv",
   signaling: VoiceSignaling,
   onError: (error: unknown) => void,
 ): void {
@@ -74,7 +75,11 @@ function bindSignaling(
   // let the same transport re-probe instead of tearing the whole session down.
   transport.on("connectionstatechange", (state) => {
     if (state === "disconnected" || state === "failed") {
-      void restartIce(transport, signaling).catch(onError);
+      console.warn("Voice transport ICE restart requested", { direction, state });
+      void restartIce(transport, signaling).catch((error: unknown) => {
+        console.error("Voice transport ICE restart failed", { direction, error });
+        onError(error);
+      });
     }
   });
 }

@@ -74,6 +74,13 @@ export function observeProducerQuality(
         return;
       }
       const quality = smoother.add(measured, Date.now());
+      if (quality === "constrained" || quality === "poor") {
+        console.warn("Voice network degraded", {
+          lossPercent: Math.round(measured.loss * 10_000) / 100,
+          rttMs: Math.round(measured.rttMs),
+          quality,
+        });
+      }
       if (!quality) return;
       await producer.setRtpEncodingParameters({ maxBitrate: BITRATES[quality] });
       onQuality(quality);

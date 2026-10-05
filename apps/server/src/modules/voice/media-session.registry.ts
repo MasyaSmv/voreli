@@ -117,18 +117,44 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     const transport = await this.transports.create(session);
     const owned: OwnedTransport = { direction, transport };
     session.transports.set(transport.id, owned);
+    this.logger.log({
+      message: "Voice transport created",
+      sessionId,
+      transportId: transport.id,
+      direction,
+    });
 
     transport.observer.once("close", () => {
+      this.logger.log({
+        message: "Voice transport closed",
+        sessionId,
+        transportId: transport.id,
+        direction,
+      });
       this.clearTransportFailureTimer(transport.id);
       this.clearTransportReconnect(sessionId, transport.id);
       session.transports.delete(transport.id);
     });
     transport.on("dtlsstatechange", (state) => {
+      this.logger.log({
+        message: "Voice transport DTLS state changed",
+        sessionId,
+        transportId: transport.id,
+        direction,
+        state,
+      });
       if (state === "closed" || state === "failed") {
         this.transportFailed(sessionId, transport);
       }
     });
     transport.on("icestatechange", (state) => {
+      this.logger.log({
+        message: "Voice transport ICE state changed",
+        sessionId,
+        transportId: transport.id,
+        direction,
+        state,
+      });
       if (state === "closed") {
         this.transportFailed(sessionId, transport);
       } else if (state === "disconnected") {
@@ -153,7 +179,31 @@ export class MediaSessionRegistry implements OnModuleDestroy {
 
   async restartIce(sessionId: string, transportId: string): Promise<types.IceParameters> {
     const transport = this.ownedTransport(sessionId, transportId);
-    return transport.transport.restartIce();
+    this.logger.log({
+      message: "Voice transport ICE restart requested",
+      sessionId,
+      transportId,
+      direction: transport.direction,
+    });
+    try {
+      const parameters = await transport.transport.restartIce();
+      this.logger.log({
+        message: "Voice transport ICE restart credentials issued",
+        sessionId,
+        transportId,
+        direction: transport.direction,
+      });
+      return parameters;
+    } catch (error: unknown) {
+      this.logger.error({
+        message: "Voice transport ICE restart failed",
+        sessionId,
+        transportId,
+        direction: transport.direction,
+        error,
+      });
+      throw error;
+    }
   }
 
   async createProducer(
