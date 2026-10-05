@@ -41,6 +41,10 @@ export class EnvironmentVariables {
   @Max(65535)
   PORT: number = 3000;
 
+  @IsString()
+  @MinLength(1)
+  LISTEN_HOST: string = "0.0.0.0";
+
   /** Origin the browser client is served from; the client never hardcodes the server host. */
   @IsString()
   @MinLength(1)
@@ -185,6 +189,13 @@ export class EnvironmentVariables {
   @IsString()
   @MinLength(1)
   S3_ENDPOINT: string = "http://localhost:9000";
+
+  /** Browser-facing origin used only to sign direct upload and download requests. */
+  @Transform(({ value }: { value: unknown }) => (value === "" ? undefined : value))
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  S3_PUBLIC_ENDPOINT?: string;
 
   @IsString()
   @MinLength(1)

@@ -22,13 +22,13 @@ import type { ObjectMetadata, ObjectStorage, PresignedUpload } from "./object-st
 @Injectable()
 export class S3ObjectStorage implements ObjectStorage, OnModuleDestroy {
   private readonly client: S3Client;
+  private readonly signingClient: S3Client;
   private readonly bucket: string;
   private bucketReady: Promise<void> | null = null;
 
   constructor(config: ConfigService<EnvironmentVariables, true>) {
     this.bucket = config.get("S3_BUCKET", { infer: true });
-    this.client = new S3Client({
-      endpoint: config.get("S3_ENDPOINT", { infer: true }),
+    const clientConfig = {
       region: config.get("S3_REGION", { infer: true }),
       forcePathStyle: config.get("S3_FORCE_PATH_STYLE", { infer: true }),
       requestHandler: {
@@ -40,11 +40,21 @@ export class S3ObjectStorage implements ObjectStorage, OnModuleDestroy {
         accessKeyId: config.get("S3_ACCESS_KEY", { infer: true }),
         secretAccessKey: config.get("S3_SECRET_KEY", { infer: true }),
       },
-    });
+    };
+    const internalEndpoint = config.get("S3_ENDPOINT", { infer: true });
+    const publicEndpoint = config.get("S3_PUBLIC_ENDPOINT", { infer: true }) ?? internalEndpoint;
+    this.client = new S3Client({ ...clientConfig, endpoint: internalEndpoint });
+    this.signingClient =
+      publicEndpoint === internalEndpoint
+        ? this.client
+        : new S3Client({ ...clientConfig, endpoint: publicEndpoint });
   }
 
   onModuleDestroy(): void {
     this.client.destroy();
+    if (this.signingClient !== this.client) {
+      this.signingClient.destroy();
+    }
   }
 
   async reserveUpload(
@@ -54,7 +64,7 @@ export class S3ObjectStorage implements ObjectStorage, OnModuleDestroy {
     expiresInSeconds: number,
   ): Promise<PresignedUpload> {
     await this.ensureBucket();
-    const result = await createPresignedPost(this.client, {
+    const result = await createPresignedPost(this.signingClient, {
       Bucket: this.bucket,
       Key: objectKey,
       Expires: expiresInSeconds,
@@ -132,7 +142,7 @@ export class S3ObjectStorage implements ObjectStorage, OnModuleDestroy {
   ): Promise<string> {
     await this.ensureBucket();
     return getSignedUrl(
-      this.client,
+      this.signingClient,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: objectKey,

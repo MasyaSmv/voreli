@@ -36,9 +36,10 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const port = config.get("PORT", { infer: true });
-  await app.listen(port);
+  const listenHost = config.get("LISTEN_HOST", { infer: true });
+  await app.listen(port, listenHost);
 
-  new Logger("Bootstrap").log(`Voreli server listening on http://localhost:${String(port)}`);
+  new Logger("Bootstrap").log(`Voreli server listening on ${listenHost}:${String(port)}`);
 }
 
 void bootstrap();

@@ -1,0 +1,14 @@
+.git
+node_modules
+**/node_modules
+**/dist
+.env*
+!.env.example
+docs
+AGENTS.md
+CLAUDE.md
+.codex
+.claude
+.code-review-graph
+playwright-report
+test-results

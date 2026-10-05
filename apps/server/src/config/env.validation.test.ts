@@ -16,6 +16,8 @@ describe("validateEnv", () => {
 
     expect(env.NODE_ENV).toBe(NodeEnv.Development);
     expect(env.PORT).toBe(3000);
+    expect(env.LISTEN_HOST).toBe("0.0.0.0");
+    expect(env.S3_PUBLIC_ENDPOINT).toBeUndefined();
     expect(env.ACCESS_TOKEN_TTL).toBe(900);
     expect(env.SOCKET_REVALIDATE_INTERVAL).toBe(60);
     expect(env.COOKIE_SECURE).toBe(false);
@@ -28,6 +30,18 @@ describe("validateEnv", () => {
 
   it("coerces PORT from the string the environment always gives us", () => {
     expect(validateEnv({ ...required, PORT: "4000" }).PORT).toBe(4000);
+  });
+
+  it("accepts a loopback listener and a separate browser-facing storage origin", () => {
+    const env = validateEnv({
+      ...required,
+      LISTEN_HOST: "127.0.0.1",
+      S3_PUBLIC_ENDPOINT: "https://storage.example.com",
+    });
+
+    expect(env.LISTEN_HOST).toBe("127.0.0.1");
+    expect(env.S3_PUBLIC_ENDPOINT).toBe("https://storage.example.com");
+    expect(validateEnv({ ...required, S3_PUBLIC_ENDPOINT: "" }).S3_PUBLIC_ENDPOINT).toBeUndefined();
   });
 
   it("rejects a zero socket revalidation interval", () => {
