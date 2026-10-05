@@ -52,6 +52,9 @@ export const ru = {
   },
   workspace: {
     servers: "Серверы",
+    channels: "Каналы",
+    conversation: "Разговор",
+    mobileNavigation: "Навигация",
     home: "Главная Voreli",
     serverMenu: "Меню сервера {{server}}",
     noServerActions: "Нет доступных действий",
@@ -70,6 +73,7 @@ export const ru = {
     welcomeDescription: "Откройте текстовый канал слева или подключитесь к голосовому.",
   },
   home: {
+    backToContacts: "К контактам",
     title: "Ваши пространства",
     description: "Выберите сервер, чтобы открыть каналы и продолжить разговор.",
     openServer: "Открыть сервер",
@@ -213,6 +217,8 @@ export const ru = {
       stop: "Остановить показ",
       available: "Демонстрации экрана",
       yours: "Вы показываете экран",
+      preview: "Предпросмотр вашего экрана",
+      live: "Ваш экран в эфире",
       participant: "Экран участника {{id}}",
       watch: "Смотреть",
       watching: "Смотрим",

@@ -22,6 +22,25 @@ export async function waitForLiveVideo(page: Page): Promise<void> {
   );
 }
 
+export async function waitForRenderedVideos(page: Page, count: number): Promise<void> {
+  await page.waitForFunction(
+    (expectedCount) => {
+      const videos = Array.from(document.querySelectorAll("video"));
+      return (
+        videos.length === expectedCount &&
+        videos.every(
+          (video) =>
+            video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+            video.videoWidth > 0 &&
+            video.videoHeight > 0,
+        )
+      );
+    },
+    count,
+    { timeout: 15_000 },
+  );
+}
+
 export async function stopCapturedDisplay(page: Page): Promise<void> {
   await page.evaluate(() => {
     const tracks = (window as Window & { __capturedDisplayTracks?: MediaStreamTrack[] })

@@ -21,6 +21,10 @@ export function ScreenShareStage({ screenShare }: ScreenShareStageProps) {
   const audioBlocked = useVoice((state) => state.screenAudioBlocked);
 
   useEffect(() => {
+    container.current?.scrollIntoView({ block: "start" });
+  }, [screenShare.id]);
+
+  useEffect(() => {
     void voiceSession.attachScreenVideo(video.current).catch((error: unknown) => {
       console.error("Failed to attach screen share video", { error });
     });
@@ -81,7 +85,7 @@ export function ScreenShareStage({ screenShare }: ScreenShareStageProps) {
   return (
     <section
       ref={container}
-      className={`${expanded ? "fixed inset-6 z-50" : "mt-4"} overflow-hidden rounded-2xl border border-line bg-black shadow-2xl`}
+      className={`${expanded ? "fixed inset-3 z-50 sm:inset-6" : "mt-4"} overflow-hidden rounded-2xl border border-line bg-black shadow-2xl`}
     >
       <video
         ref={video}
@@ -90,8 +94,8 @@ export function ScreenShareStage({ screenShare }: ScreenShareStageProps) {
         playsInline
         className="aspect-video max-h-[min(65vh,48rem)] w-full object-contain"
       />
-      <div className="flex items-center justify-between gap-3 border-t border-line bg-panel px-4 py-3">
-        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-panel px-3 py-3 sm:px-4">
+        <p className="w-full truncate text-sm font-semibold text-ink sm:min-w-0 sm:flex-1">
           {t("voice.screen.participant", { id: screenShare.userId.slice(0, 6) })}
         </p>
         <button

@@ -114,6 +114,12 @@ export class ScreenShareController {
     if (this.screenStreamId === screenStreamId) this.closeLocal();
   }
 
+  attachPreview(element: HTMLVideoElement | null): void {
+    if (!element) return;
+    const track = this.capture.previewVideoTrack();
+    element.srcObject = track ? new MediaStream([track]) : null;
+  }
+
   private closeLocal(): void {
     this.audioProducer?.close();
     this.videoProducer?.close();

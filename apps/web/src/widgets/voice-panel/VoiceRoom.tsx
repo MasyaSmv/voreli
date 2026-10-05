@@ -11,6 +11,7 @@ import { voiceSession } from "../../features/voice-join/voice-session";
 import { useVoice } from "../../entities/voice/voice.store";
 import { Avatar } from "../../shared/ui/Avatar";
 import { VoiceControls } from "./VoiceControls";
+import { OwnScreenPreview } from "./OwnScreenPreview";
 import { ScreenShareStage } from "./ScreenShareStage";
 
 interface VoiceRoomProps {
@@ -44,12 +45,16 @@ export function VoiceRoom({
   const selectedScreenShare = screenShares.find(
     (screenShare) => screenShare.id === selectedScreenShareId,
   );
+  const orderedParticipants = [...participants].sort(
+    (first, second) =>
+      Number(second.userId === currentUserId) - Number(first.userId === currentUserId),
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7">
         <div className="mx-auto max-w-4xl">
-          <div className="mb-5 flex items-end justify-between gap-4">
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-faint">
                 {t("voice.onAir")}
@@ -90,9 +95,13 @@ export function VoiceRoom({
             </div>
           </div>
 
-          <ul className="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-3">
-            {participants.map((participant) => {
+          {selectedScreenShare ? <ScreenShareStage screenShare={selectedScreenShare} /> : null}
+          <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] sm:gap-3">
+            {orderedParticipants.map((participant) => {
               const isCurrentUser = participant.userId === currentUserId;
+              const participantShare = screenShares.find(
+                (screenShare) => screenShare.userId === participant.userId,
+              );
               const name = isCurrentUser
                 ? (currentUserName ?? t("common.you"))
                 : t("workspace.participant", { id: participant.userId.slice(0, 6) });
@@ -102,21 +111,32 @@ export function VoiceRoom({
                 <li
                   key={participant.userId}
                   className={
-                    "relative min-h-44 overflow-hidden rounded-2xl border bg-panel px-5 py-6 text-center transition " +
+                    "relative min-h-36 overflow-hidden rounded-2xl border bg-panel px-3 py-4 text-center transition sm:min-h-44 sm:px-5 sm:py-6 " +
                     (speaking
                       ? "border-voice/55 shadow-[0_0_0_1px_rgba(73,211,160,.16),0_16px_45px_rgba(0,0,0,.18)]"
                       : "border-line")
                   }
                 >
-                  <span
-                    className={
-                      "mx-auto block w-fit rounded-[40%] p-1 transition " +
-                      (speaking ? "bg-voice/70 shadow-[0_0_28px_rgba(73,211,160,.25)]" : "bg-line")
-                    }
-                  >
-                    <Avatar name={name} size="lg" />
-                  </span>
-                  <p className="mt-4 truncate text-sm font-bold text-ink">
+                  {isCurrentUser && participantShare ? (
+                    <div className="relative mx-auto w-full max-w-64">
+                      <OwnScreenPreview label={t("voice.screen.preview")} />
+                      <span className="absolute bottom-2 left-2 rounded-md bg-black/75 px-2 py-1 text-[11px] font-semibold text-white">
+                        {t("voice.screen.live")}
+                      </span>
+                    </div>
+                  ) : (
+                    <span
+                      className={
+                        "mx-auto block w-fit rounded-[40%] p-1 transition " +
+                        (speaking
+                          ? "bg-voice/70 shadow-[0_0_28px_rgba(73,211,160,.25)]"
+                          : "bg-line")
+                      }
+                    >
+                      <Avatar name={name} size="lg" />
+                    </span>
+                  )}
+                  <p className="mt-2 truncate text-sm font-bold text-ink sm:mt-4">
                     {isCurrentUser ? t("common.you") : name}
                   </p>
                   <ParticipantState participant={participant} speaking={speaking} />
@@ -180,7 +200,7 @@ export function VoiceRoom({
               <ul className="mt-2 space-y-2">
                 {screenShares.map((screenShare) => (
                   <li key={screenShare.id} className="flex items-center justify-between gap-3">
-                    <span className="text-sm text-ink-soft">
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink-soft">
                       {screenShare.userId === currentUserId
                         ? t("voice.screen.yours")
                         : t("voice.screen.participant", {
@@ -212,7 +232,6 @@ export function VoiceRoom({
               </ul>
             </div>
           )}
-          {selectedScreenShare ? <ScreenShareStage screenShare={selectedScreenShare} /> : null}
         </div>
       </div>
 
