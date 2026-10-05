@@ -117,6 +117,15 @@ describe("voice signaling", () => {
       await bobSocket.emitWithAck(VoiceClientEvent.CreateTransport, { direction: "recv" }),
     );
 
+    await expect(
+      aliceSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
+        transportId: aliceSend.id,
+        kind: "video",
+        rtpParameters: videoRtpParameters(aliceJoin.rtpCapabilities),
+        source: "camera-video",
+      }),
+    ).resolves.toMatchObject({ ok: false, errorCode: "CAMERA_FORBIDDEN" });
+
     const forbidden = (await bobSocket.emitWithAck(VoiceClientEvent.CreateProducer, {
       transportId: bobSend.id,
       kind: "audio",

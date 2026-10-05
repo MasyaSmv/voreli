@@ -13,6 +13,7 @@ import {
 } from "@voreli/shared";
 
 import { VoiceRequestError } from "./voice-request-error";
+import { sessionUserId } from "./voice-identity";
 import type { VoiceSignaling } from "./voice-signaling";
 import type { VoiceSessionState } from "./voice-state";
 
@@ -52,12 +53,19 @@ export interface ScreenSharePublishing {
   stopped(screenStreamId: string): void;
 }
 
+export interface CallCameraEvents {
+  consume(userId: string, producerId: string): Promise<void>;
+  closed(producerId: string): void;
+  stop(): Promise<void>;
+}
+
 interface VoiceServerEventDeps {
   readonly state: VoiceSessionState;
   readonly media: VoiceMediaControl;
   readonly speaking: RemoteSpeakers;
   readonly screenViewing: ScreenShareViewing;
   readonly screenPublishing: ScreenSharePublishing;
+  readonly camera: CallCameraEvents;
   readonly lifecycle: VoiceSessionLifecycle;
 }
 
@@ -69,10 +77,22 @@ interface VoiceServerEventDeps {
  */
 export function bindVoiceServerEvents(
   signaling: VoiceSignaling,
-  { state, media, speaking, screenViewing, screenPublishing, lifecycle }: VoiceServerEventDeps,
+  {
+    state,
+    media,
+    speaking,
+    screenViewing,
+    screenPublishing,
+    camera,
+    lifecycle,
+  }: VoiceServerEventDeps,
 ): void {
   signaling.on("disconnect", () => {
     if (state.isActive) state.reconnecting();
+    void camera.stop().catch((error: unknown) => {
+      console.error("Failed to release camera after voice socket disconnect", { error });
+      state.failed(error);
+    });
   });
 
   signaling.on("connect", () => {
@@ -94,9 +114,10 @@ export function bindVoiceServerEvents(
   signaling.on<VoiceParticipantLeftEvent>(VoiceServerEvent.ParticipantLeft, (event) => {
     // Read the producers before removing the participant: afterwards there is nothing left
     // to say which audio elements were theirs.
-    state
-      .participant(event.userId)
-      ?.producers.forEach((producer) => media.closeReceived(producer.producerId));
+    state.participant(event.userId)?.producers.forEach((producer) => {
+      media.closeReceived(producer.producerId);
+      camera.closed(producer.producerId);
+    });
     state.removeParticipant(event.userId);
   });
 
@@ -107,14 +128,21 @@ export function bindVoiceServerEvents(
       source: event.source,
       screenStreamId: event.screenStreamId,
     });
-    void media
-      .consumeRemote(event.userId, event.producerId)
-      .catch((error: unknown) => state.failed(error));
+    if (event.source === "microphone") {
+      void media
+        .consumeRemote(event.userId, event.producerId)
+        .catch((error: unknown) => state.failed(error));
+    } else if (event.source === "camera-video" && event.userId !== sessionUserId()) {
+      void camera
+        .consume(event.userId, event.producerId)
+        .catch((error: unknown) => state.failed(error));
+    }
   });
 
   signaling.on<VoiceProducerClosedEvent>(VoiceServerEvent.ProducerClosed, (event) => {
     media.closeProducer(event.producerId);
     media.closeReceived(event.producerId);
+    camera.closed(event.producerId);
     state.removeProducer(event.producerId);
   });
 

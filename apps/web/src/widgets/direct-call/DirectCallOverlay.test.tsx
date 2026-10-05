@@ -52,7 +52,7 @@ describe("DirectCallOverlay", () => {
     expect(screen.getByRole("button", { name: "Принять звонок" })).toBeEnabled();
     const decline = screen.getByRole("button", { name: "Отклонить звонок" });
     expect(decline).toBeEnabled();
-    expect(screen.getByRole("dialog", { name: "Звонок с Alice" })).toHaveClass("min-h-dvh");
+    expect(screen.getByRole("dialog", { name: "Звонок с Alice" })).toHaveClass("h-dvh");
     await waitFor(() => expect(decline).toHaveFocus());
   });
 

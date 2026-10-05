@@ -89,7 +89,9 @@ function bindProducing(transport: types.Transport, signaling: VoiceSignaling): v
         kind,
         rtpParameters,
         source:
-          metadata.source === "screen-video" || metadata.source === "screen-audio"
+          metadata.source === "screen-video" ||
+          metadata.source === "screen-audio" ||
+          metadata.source === "camera-video"
             ? metadata.source
             : "microphone",
         ...(typeof metadata.screenStreamId === "string"

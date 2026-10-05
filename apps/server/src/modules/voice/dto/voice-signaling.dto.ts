@@ -5,6 +5,7 @@ import type {
   CreateTransportPayload,
   RestartIcePayload,
   ResumeConsumerPayload,
+  StopCameraPayload,
 } from "@voreli/shared";
 import {
   IsIn,
@@ -82,7 +83,7 @@ export class CreateProducerDto implements CreateProducerPayload {
   @IsObject()
   rtpParameters!: CreateProducerPayload["rtpParameters"];
 
-  @IsIn(["microphone", "screen-video", "screen-audio"])
+  @IsIn(["microphone", "screen-video", "screen-audio", "camera-video"])
   source!: CreateProducerPayload["source"];
 
   @IsOptional()
@@ -108,4 +109,14 @@ export class ResumeConsumerDto implements ResumeConsumerPayload {
   @IsString()
   @Length(1, ID_MAX_LENGTH)
   consumerId!: string;
+}
+
+export class StopCameraDto implements StopCameraPayload {
+  @IsString()
+  @Length(1, ID_MAX_LENGTH)
+  mediaRoomId!: string;
+
+  @IsString()
+  @Length(1, ID_MAX_LENGTH)
+  producerId!: string;
 }

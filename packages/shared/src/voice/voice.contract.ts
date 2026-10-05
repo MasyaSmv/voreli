@@ -21,6 +21,7 @@ export const VoiceClientEvent = {
   ScreenUnwatch: "voice:screen-unwatch",
   ScreenLayer: "voice:screen-layer",
   ScreenVisibility: "voice:screen-visibility",
+  CameraStop: "voice:camera-stop",
   RefreshAuth: "auth:refresh",
 } as const;
 
@@ -39,7 +40,7 @@ export const VoiceServerEvent = {
 
 export type TransportDirection = "send" | "recv";
 
-export type VoiceMediaSource = "microphone" | "screen-video" | "screen-audio";
+export type VoiceMediaSource = "microphone" | "screen-video" | "screen-audio" | "camera-video";
 
 export interface VoiceProducerView {
   readonly producerId: string;
@@ -112,6 +113,11 @@ export interface CreateProducerPayload {
 }
 
 export interface CreateProducerResponse {
+  readonly producerId: string;
+}
+
+export interface StopCameraPayload {
+  readonly mediaRoomId: string;
   readonly producerId: string;
 }
 

@@ -41,6 +41,7 @@ import {
   CreateProducerDto,
   CreateTransportDto,
   RestartIceDto,
+  StopCameraDto,
   ResumeConsumerDto,
   VoiceJoinDto,
 } from "./dto/voice-signaling.dto.js";
@@ -221,6 +222,21 @@ export class VoiceGateway extends AuthenticatedGateway {
         validateSocketPayload(CreateConsumerDto, payload),
       ),
     }));
+  }
+
+  @SubscribeMessage(VoiceClientEvent.CameraStop)
+  async stopCamera(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<Ack<null>> {
+    return this.guarded(socket, async (identity) => {
+      await this.signaling.stopCamera(
+        identity.user.id,
+        identity.sessionId,
+        validateSocketPayload(StopCameraDto, payload),
+      );
+      return { ok: true, data: null };
+    });
   }
 
   @SubscribeMessage(VoiceClientEvent.ResumeConsumer)

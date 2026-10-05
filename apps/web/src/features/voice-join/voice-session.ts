@@ -19,6 +19,8 @@ import { VoiceInputDevice } from "../voice-devices/voice-input-device";
 import { VoiceDeviceController } from "../voice-devices/voice-device-controller";
 import { ScreenShareController } from "../screen-share/screen-share-controller";
 import { ScreenShareViewer } from "../screen-share/screen-share-viewer";
+import { CallCamera } from "../direct-call/call-camera";
+import { useVoice } from "../../entities/voice/voice.store";
 
 /**
  * The one object the UI talks to: every command a person can issue on a voice session.
@@ -41,6 +43,7 @@ class VoiceSession {
   );
   private readonly screenShare = new ScreenShareController(this.signaling, this.state, this.media);
   private readonly screenViewer = new ScreenShareViewer(this.signaling, this.state, this.media);
+  private readonly camera = new CallCamera(this.signaling, this.state, this.media);
   private readonly connection = new VoiceConnection(
     this.signaling,
     this.state,
@@ -57,13 +60,17 @@ class VoiceSession {
       speaking: this.speaking,
       screenViewing: this.screenViewer,
       screenPublishing: this.screenShare,
+      camera: this.camera,
       lifecycle: {
         reconnect: () => {
-          void this.serial(() => this.connection.resume()).catch((error: unknown) =>
-            this.state.failed(error),
-          );
+          void this.serial(async () => {
+            await this.connection.resume();
+            await this.camera.flushPendingStop();
+            await this.consumeExistingCamera();
+          }).catch((error: unknown) => this.state.failed(error));
         },
         forceLeave: () => {
+          this.camera.close();
           this.screenShare.close();
           this.screenViewer.close();
           this.connection.shutdown();
@@ -79,6 +86,7 @@ class VoiceSession {
     this.speaking.unlockAudio();
     this.screenShare.close();
     this.screenViewer.close();
+    this.camera.close();
     const microphone = this.devices.capture();
     void microphone.catch((error: unknown) => {
       console.error("Failed to capture the voice microphone", { error });
@@ -88,7 +96,7 @@ class VoiceSession {
   }
 
   joinMediaRoom(mediaRoomId: string, preparedMicrophone?: Promise<MediaStream>): Promise<void> {
-    if (this.state.channelId === mediaRoomId && this.state.isConnected) {
+    if (this.state.channelId === mediaRoomId && this.state.isActive) {
       if (preparedMicrophone) {
         void preparedMicrophone
           .then((stream) => stream.getTracks().forEach((track) => track.stop()))
@@ -101,6 +109,7 @@ class VoiceSession {
     this.speaking.unlockAudio();
     this.screenShare.close();
     this.screenViewer.close();
+    this.camera.close();
     const microphone = preparedMicrophone
       ? preparedMicrophone.then((stream) => this.devices.adopt(stream))
       : this.devices.capture();
@@ -108,7 +117,10 @@ class VoiceSession {
       console.error("Failed to prepare the media-room microphone", { error });
       this.state.failed(error);
     });
-    return this.run(() => this.connection.join(mediaRoomId, microphone, "media-room"));
+    return this.run(async () => {
+      await this.connection.join(mediaRoomId, microphone, "media-room");
+      await this.consumeExistingCamera();
+    });
   }
 
   unlockAudio(): void {
@@ -124,6 +136,7 @@ class VoiceSession {
       } finally {
         this.screenShare.close();
         this.screenViewer.close();
+        this.camera.close();
         this.connection.shutdown({ clearError: true });
       }
     });
@@ -206,6 +219,40 @@ class VoiceSession {
     return this.run(() => this.screenViewer.resumeAudio());
   }
 
+  startCamera(): Promise<void> {
+    return this.serial(() => this.camera.start());
+  }
+
+  stopCamera(): Promise<void> {
+    return this.serial(() => this.camera.stop());
+  }
+
+  switchCamera(): Promise<void> {
+    return this.serial(() => this.camera.switchCamera());
+  }
+
+  attachOwnCamera(element: HTMLVideoElement | null): void {
+    this.camera.attachOwn(element);
+  }
+
+  attachRemoteCamera(element: HTMLVideoElement | null): void {
+    this.camera.attachRemote(element);
+  }
+
+  private async consumeExistingCamera(): Promise<void> {
+    const self = sessionUserId();
+    const participants = useVoice.getState().participants;
+    await Promise.all(
+      participants
+        .filter((participant) => participant.userId !== self)
+        .flatMap((participant) =>
+          participant.producers
+            .filter((producer) => producer.source === "camera-video")
+            .map((producer) => this.camera.consume(participant.userId, producer.producerId)),
+        ),
+    );
+  }
+
   /**
    * Capture for callers who need the microphone before a room exists — accepting a call, for
    * one. It goes through the same owner as a join, so the chosen input is honoured and the
@@ -239,6 +286,9 @@ class VoiceSession {
   observeNetworkQuality(onQuality: (quality: CallConnectionQuality) => void): () => void {
     return this.media.observeQuality((quality) => {
       this.media.setJitterBufferTarget(quality);
+      void this.camera.setNetworkQuality(quality).catch((error: unknown) => {
+        console.error("Failed to adapt call camera to network quality", { error });
+      });
       onQuality(quality);
     });
   }

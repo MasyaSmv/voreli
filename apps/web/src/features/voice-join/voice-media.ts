@@ -262,6 +262,20 @@ export class VoiceMedia implements ScreenMediaGraph {
     });
   }
 
+  async produceCamera(track: MediaStreamTrack): Promise<types.Producer> {
+    if (!this.transports) throw new Error(i18n.t("voice.errors.transportsNotReady"));
+    return this.transports.send.produce({
+      track,
+      appData: { source: "camera-video" },
+      stopTracks: false,
+      encodings: [{ maxBitrate: 500_000 }],
+    });
+  }
+
+  createCameraConsumer(producerId: string): Promise<types.Consumer> {
+    return this.createConsumer(producerId);
+  }
+
   watchScreen(producers: Parameters<ScreenMedia["watch"]>[0]): Promise<boolean> {
     return this.screen.watch(producers);
   }

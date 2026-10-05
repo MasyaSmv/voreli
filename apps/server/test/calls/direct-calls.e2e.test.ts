@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { DirectCallService } from "../../src/modules/calls/direct-call.service.js";
+import { VoiceCameraService } from "../../src/modules/voice/voice-camera.service.js";
+import { VoiceMediaSessionContextService } from "../../src/modules/voice/voice-media-session-context.service.js";
 import {
   CALL_DEADLINE_SCHEDULER,
   type CallDeadlineScheduler,
@@ -36,6 +38,8 @@ describe("direct call lifecycle", () => {
   let routers: RouterRegistryService;
   let media: MediaSessionRegistry;
   let events: DomainEventBus;
+  let camera: VoiceCameraService;
+  let contexts: VoiceMediaSessionContextService;
 
   beforeAll(async () => {
     testApp = await createTestApp();
@@ -50,6 +54,8 @@ describe("direct call lifecycle", () => {
     routers = testApp.app.get(RouterRegistryService);
     media = testApp.app.get(MediaSessionRegistry);
     events = testApp.app.get(DOMAIN_EVENT_BUS);
+    camera = testApp.app.get(VoiceCameraService);
+    contexts = testApp.app.get(VoiceMediaSessionContextService);
   });
 
   beforeEach(async () => {
@@ -190,6 +196,105 @@ describe("direct call lifecycle", () => {
     await expectEventually(async () => {
       expect(await voiceState.participants(accepted.mediaRoomId)).toHaveLength(0);
       expect(routers.participantCount(accepted.mediaRoomId)).toBe(0);
+    });
+  });
+
+  it("publishes one camera per call participant and restricts stopping it to its owner", async () => {
+    const conversation = await conversations.findOrCreate(caller.id, callee.id);
+    const started = await calls.start(caller.id, "caller-camera-session", {
+      conversationId: conversation.id,
+      clientNonce: "nonce-camera",
+    });
+    const accepted = await calls.accept(started.id, callee.id, "callee-camera-session");
+    const callerJoin = await voiceRooms.join(
+      caller.id,
+      "caller-camera-session",
+      "caller-camera-socket",
+      accepted.mediaRoomId,
+    );
+    const calleeJoin = await voiceRooms.join(
+      callee.id,
+      "callee-camera-session",
+      "callee-camera-socket",
+      accepted.mediaRoomId,
+    );
+    const callerSend = await media.createTransport(callerJoin.sessionId, "send");
+    const calleeRecv = await media.createTransport(calleeJoin.sessionId, "recv");
+    const callerContext = await contexts.resolve(caller.id, "caller-camera-session");
+    const calleeContext = await contexts.resolve(callee.id, "callee-camera-session");
+    const vp8 = callerJoin.rtpCapabilities.codecs?.find(
+      (codec) => codec.mimeType.toLowerCase() === "video/vp8",
+    );
+    if (!vp8) throw new Error("Voice Router has no VP8 codec");
+    const command = {
+      transportId: callerSend.id,
+      source: "camera-video" as const,
+      kind: "video" as const,
+      rtpParameters: {
+        mid: "camera-video",
+        codecs: [
+          {
+            mimeType: vp8.mimeType,
+            payloadType: vp8.preferredPayloadType,
+            clockRate: vp8.clockRate,
+            parameters: vp8.parameters ?? {},
+            rtcpFeedback: vp8.rtcpFeedback ?? [],
+          },
+        ],
+        headerExtensions: [],
+        encodings: [{ ssrc: 55_555_555 }],
+        rtcp: { cname: "voreli-camera-e2e" },
+      },
+    };
+    const producer = await camera.create(
+      caller.id,
+      "caller-camera-session",
+      callerContext,
+      command,
+    );
+    await expect(
+      camera.create(caller.id, "caller-camera-session", callerContext, command),
+    ).rejects.toMatchObject({ errorCode: "VOICE_MEDIA_OBJECT_LIMIT" });
+    const consumer = await media.createConsumer(
+      calleeJoin.sessionId,
+      calleeRecv.id,
+      producer.id,
+      calleeJoin.rtpCapabilities,
+    );
+    expect(consumer.kind).toBe("video");
+    await expect(
+      camera.stop(callee.id, "callee-camera-session", calleeContext, {
+        mediaRoomId: accepted.mediaRoomId,
+        producerId: producer.id,
+      }),
+    ).rejects.toMatchObject({ errorCode: "VOICE_MEDIA_OBJECT_NOT_FOUND" });
+    await camera.stop(caller.id, "caller-camera-session", callerContext, {
+      mediaRoomId: accepted.mediaRoomId,
+      producerId: producer.id,
+    });
+    expect(producer.closed).toBe(true);
+    await expectEventually(() => expect(consumer.closed).toBe(true));
+    await camera.stop(caller.id, "caller-camera-session", callerContext, {
+      mediaRoomId: accepted.mediaRoomId,
+      producerId: producer.id,
+    });
+    const restarted = await camera.create(caller.id, "caller-camera-session", callerContext, {
+      ...command,
+      rtpParameters: {
+        ...command.rtpParameters,
+        encodings: [{ ssrc: 66_666_666 }],
+      },
+    });
+    const restartedConsumer = await media.createConsumer(
+      calleeJoin.sessionId,
+      calleeRecv.id,
+      restarted.id,
+      calleeJoin.rtpCapabilities,
+    );
+    await calls.hangup(started.id, caller.id);
+    await expectEventually(() => {
+      expect(restarted.closed).toBe(true);
+      expect(restartedConsumer.closed).toBe(true);
     });
   });
 
