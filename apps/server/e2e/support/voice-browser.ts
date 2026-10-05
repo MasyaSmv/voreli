@@ -16,15 +16,18 @@ export async function voiceContext(
     const instrumentedWindow = window as unknown as Window & {
       __voicePeerConnections: RTCPeerConnection[];
       __capturedMicrophoneTracks: MediaStreamTrack[];
+      __capturedCameraTracks: MediaStreamTrack[];
       __capturedDisplayTracks: MediaStreamTrack[];
     };
     instrumentedWindow.__voicePeerConnections = peerConnections;
     instrumentedWindow.__capturedMicrophoneTracks = [];
+    instrumentedWindow.__capturedCameraTracks = [];
     instrumentedWindow.__capturedDisplayTracks = [];
     const nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     navigator.mediaDevices.getUserMedia = async (constraints) => {
       const stream = await nativeGetUserMedia(constraints);
       instrumentedWindow.__capturedMicrophoneTracks.push(...stream.getAudioTracks());
+      instrumentedWindow.__capturedCameraTracks.push(...stream.getVideoTracks());
       return stream;
     };
     const nativeGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(

@@ -31,6 +31,7 @@ interface MediaSession {
   readonly webRtcServer: types.WebRtcServer;
   readonly transports: Map<string, OwnedTransport>;
   readonly producers: Map<string, types.Producer>;
+  readonly pendingProducers: Set<string>;
   readonly consumers: Map<string, OwnedConsumer>;
 }
 
@@ -80,6 +81,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
       webRtcServer: handle.webRtcServer,
       transports: new Map(),
       producers: new Map(),
+      pendingProducers: new Set(),
       consumers: new Map(),
     });
     this.failedSessions.delete(sessionId);
@@ -222,23 +224,41 @@ export class MediaSessionRegistry implements OnModuleDestroy {
 
     const validSource =
       (source === "microphone" && kind === "audio" && screenStreamId === null) ||
+      (source === "camera-video" && kind === "video" && screenStreamId === null) ||
       (source === "screen-video" && kind === "video" && screenStreamId !== null) ||
       (source === "screen-audio" && kind === "audio" && screenStreamId !== null);
     const duplicateSource = [...session.producers.values()].some(
       (current) =>
         current.appData["source"] === source &&
-        (source === "microphone" || current.appData["screenStreamId"] === screenStreamId),
+        (source === "microphone" ||
+          source === "camera-video" ||
+          current.appData["screenStreamId"] === screenStreamId),
     );
-    if (session.producers.size >= 3 || !validSource || duplicateSource) {
+    const sourceKey = `${source}:${screenStreamId ?? ""}`;
+    if (
+      session.producers.size + session.pendingProducers.size >= 4 ||
+      !validSource ||
+      duplicateSource ||
+      session.pendingProducers.has(sourceKey)
+    ) {
       throw new VoiceMediaObjectLimitError("producer");
     }
-
-    const producer = await transport.transport.produce({
-      kind,
-      rtpParameters,
-      paused,
-      appData: { source, screenStreamId },
-    });
+    session.pendingProducers.add(sourceKey);
+    let producer: types.Producer;
+    try {
+      producer = await transport.transport.produce({
+        kind,
+        rtpParameters,
+        paused,
+        appData: { source, screenStreamId },
+      });
+    } finally {
+      session.pendingProducers.delete(sourceKey);
+    }
+    if (!this.sessions.has(sessionId)) {
+      producer.close();
+      throw new VoiceSessionNotFoundError();
+    }
     session.producers.set(producer.id, producer);
     this.producers.set(producer.id, { channelId: session.channelId, sessionId, producer });
 

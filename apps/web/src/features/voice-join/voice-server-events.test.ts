@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useVoice } from "../../entities/voice/voice.store";
 import {
   bindVoiceServerEvents,
+  type CallCameraEvents,
   type RemoteSpeakers,
   type VoiceMediaControl,
   type VoiceSessionLifecycle,
@@ -79,6 +80,26 @@ class RecordingSpeakers implements RemoteSpeakers {
   }
 }
 
+class RecordingCamera implements CallCameraEvents {
+  readonly consumed: { userId: string; producerId: string }[] = [];
+  readonly closedProducers: string[] = [];
+  stops = 0;
+
+  consume(userId: string, producerId: string): Promise<void> {
+    this.consumed.push({ userId, producerId });
+    return Promise.resolve();
+  }
+
+  closed(producerId: string): void {
+    this.closedProducers.push(producerId);
+  }
+
+  stop(): Promise<void> {
+    this.stops += 1;
+    return Promise.resolve();
+  }
+}
+
 class RecordingLifecycle implements VoiceSessionLifecycle {
   reconnects = 0;
   forcedLeaves = 0;
@@ -109,18 +130,21 @@ describe("bindVoiceServerEvents", () => {
   let media: RecordingMedia;
   let speaking: RecordingSpeakers;
   let lifecycle: RecordingLifecycle;
+  let camera: RecordingCamera;
 
   beforeEach(() => {
     signaling = new TestSignaling();
     media = new RecordingMedia();
     speaking = new RecordingSpeakers();
     lifecycle = new RecordingLifecycle();
+    camera = new RecordingCamera();
     bindVoiceServerEvents(signaling, {
       state,
       media,
       speaking,
       screenViewing: { updated: () => undefined, stopped: () => undefined },
       screenPublishing: { stopped: () => undefined },
+      camera,
       lifecycle,
     });
   });
@@ -145,6 +169,22 @@ describe("bindVoiceServerEvents", () => {
 
     signaling.deliver("connect", undefined);
     expect(lifecycle.reconnects).toBe(1);
+    expect(camera.stops).toBe(1);
+  });
+
+  it("routes camera video to the call camera without treating it as audio", () => {
+    state.joined("direct-call:one", "session-one", [{ ...bob, producers: [] }]);
+    signaling.deliver(VoiceServerEvent.ProducerNew, {
+      userId: bob.userId,
+      producerId: "camera-bob",
+      kind: "video" as const,
+      source: "camera-video" as const,
+      screenStreamId: null,
+    });
+    expect(camera.consumed).toEqual([{ userId: bob.userId, producerId: "camera-bob" }]);
+    expect(media.consumed).toEqual([]);
+    signaling.deliver(VoiceServerEvent.ProducerClosed, { producerId: "camera-bob" });
+    expect(camera.closedProducers).toContain("camera-bob");
   });
 
   it("records a new producer and starts consuming it", () => {

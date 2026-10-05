@@ -45,14 +45,54 @@ export function DirectCallOverlay() {
           paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
           paddingLeft: "max(1.5rem, env(safe-area-inset-left))",
         }}
-        className="flex min-h-dvh w-full flex-col text-center motion-safe:animate-voreli-call-rise sm:min-h-0 sm:max-w-sm sm:rounded-card sm:border sm:border-line sm:bg-panel sm:shadow-card"
+        className="flex h-dvh w-full flex-col overflow-y-auto text-center motion-safe:animate-voreli-call-rise sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-2xl sm:rounded-card sm:border sm:border-line sm:bg-panel sm:shadow-card"
       >
         <div className="flex flex-1 flex-col justify-center sm:flex-none">
-          <Avatar
-            name={peer.displayName}
-            url={peer.avatarUrl}
-            className="mx-auto h-24 w-24 motion-safe:animate-voreli-call-pulse sm:h-20 sm:w-20"
-          />
+          <div className="relative mx-auto flex w-full max-w-xl flex-1 items-center justify-center overflow-hidden rounded-card bg-panel-raised sm:mt-4 sm:aspect-video sm:flex-none">
+            {state.remoteCamera ? (
+              <video
+                ref={(element) => voiceSession.attachRemoteCamera(element)}
+                autoPlay
+                playsInline
+                className="h-full w-full object-cover"
+                aria-label={t("call.remoteCamera", { name: peer.displayName })}
+              />
+            ) : (
+              <Avatar
+                name={peer.displayName}
+                url={peer.avatarUrl}
+                className="h-24 w-24 motion-safe:animate-voreli-call-pulse sm:h-20 sm:w-20"
+              />
+            )}
+          </div>
+          {state.cameraStatus === "on" ? (
+            <div className="mt-2 flex items-center gap-3 rounded-control bg-panel-raised p-2 text-left">
+              <video
+                ref={(element) => voiceSession.attachOwnCamera(element)}
+                autoPlay
+                muted
+                playsInline
+                className="h-20 w-28 rounded-control border border-line bg-black object-cover -scale-x-100"
+                aria-label={t("call.ownCamera")}
+              />
+              <span className="text-sm text-ink-soft">{t("call.ownCamera")}</span>
+              {state.cameraSwitchAvailable ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void voiceSession
+                      .switchCamera()
+                      .catch((error: unknown) =>
+                        console.error("Failed to switch call camera", { error }),
+                      )
+                  }
+                  className="ml-auto min-h-11 touch-manipulation rounded-control border border-line px-3 text-sm text-ink"
+                >
+                  {t("call.switchCamera")}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <h2 className="mt-5 text-xl font-bold text-ink">{peer.displayName}</h2>
           <p className="mt-1 text-sm text-muted">@{peer.username}</p>
           <p
@@ -86,9 +126,19 @@ export function DirectCallOverlay() {
               ) : null}
             </div>
           ) : null}
+          {state.cameraError ? (
+            <p className="mt-2 text-sm text-danger-soft" role="alert">
+              {state.cameraError}
+            </p>
+          ) : null}
+          {state.cameraNetworkPaused ? (
+            <p className="mt-2 text-sm text-warning" role="status">
+              {t("call.cameraPaused")}
+            </p>
+          ) : null}
         </div>
 
-        <div className="mt-8 flex justify-center gap-5 sm:mt-7">
+        <div className="mt-5 flex flex-wrap justify-center gap-3 sm:mt-7">
           {state.call.status === "RINGING" && !outgoing ? (
             <>
               <CallButton
@@ -119,6 +169,19 @@ export function DirectCallOverlay() {
           ) : null}
           {active ? (
             <>
+              <CallButton
+                label={state.cameraStatus === "on" ? t("call.cameraOff") : t("call.cameraOn")}
+                tone={state.cameraStatus === "on" ? "voice" : "neutral"}
+                icon={state.cameraStatus === "on" ? "camera" : "camera-off"}
+                action={() =>
+                  (state.cameraStatus === "on"
+                    ? voiceSession.stopCamera()
+                    : voiceSession.startCamera()
+                  ).catch((error: unknown) => {
+                    console.warn("Call camera action failed", { error });
+                  })
+                }
+              />
               <CallButton
                 label={ownVoice?.selfMuted ? t("call.unmute") : t("call.mute")}
                 tone={ownVoice?.selfMuted ? "muted" : "neutral"}
@@ -164,7 +227,8 @@ function CallButton({
 }: {
   readonly label: string;
   readonly tone: "voice" | "danger" | "neutral" | "muted";
-  readonly icon: "phone" | "phone-off" | "mic" | "mic-off" | "volume" | "volume-off";
+  readonly icon:
+    "phone" | "phone-off" | "mic" | "mic-off" | "volume" | "volume-off" | "camera" | "camera-off";
   readonly primary?: boolean;
   readonly buttonRef?: Ref<HTMLButtonElement>;
   readonly action: () => Promise<void>;

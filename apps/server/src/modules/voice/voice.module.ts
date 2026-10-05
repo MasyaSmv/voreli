@@ -31,6 +31,7 @@ import { ScreenShareSignalingService } from "./screen-share-signaling.service.js
 import { VoiceMicrophoneService } from "./voice-microphone.service.js";
 import { VoicePermissionEnforcementService } from "./voice-permission-enforcement.service.js";
 import { VoiceLocalMediaService } from "./voice-local-media.service.js";
+import { VoiceCameraService } from "./voice-camera.service.js";
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { VoiceLocalMediaService } from "./voice-local-media.service.js";
     VoiceMicrophoneService,
     VoicePermissionEnforcementService,
     VoiceLocalMediaService,
+    VoiceCameraService,
     RedisVoiceStateRepository,
     { provide: VOICE_STATE_REPOSITORY, useExisting: RedisVoiceStateRepository },
   ],

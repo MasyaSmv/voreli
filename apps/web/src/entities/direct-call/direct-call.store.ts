@@ -6,6 +6,11 @@ interface DirectCallState {
   readonly mediaRoomId: string | null;
   readonly quality: CallConnectionQuality;
   readonly error: string | null;
+  readonly cameraStatus: "off" | "starting" | "on" | "error";
+  readonly cameraError: string | null;
+  readonly cameraSwitchAvailable: boolean;
+  readonly cameraNetworkPaused: boolean;
+  readonly remoteCamera: MediaStream | null;
   readonly reconnectingUserId: string | null;
   readonly historyRevision: number;
   readonly lastEndedConversationId: string | null;
@@ -19,6 +24,11 @@ const initial = {
   mediaRoomId: null,
   quality: "unknown" as const,
   error: null,
+  cameraStatus: "off" as const,
+  cameraError: null,
+  cameraSwitchAvailable: false,
+  cameraNetworkPaused: false,
+  remoteCamera: null,
   reconnectingUserId: null,
 };
 

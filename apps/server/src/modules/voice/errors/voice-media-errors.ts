@@ -75,3 +75,12 @@ export class ScreenShareStateError extends DomainError {
     super(message);
   }
 }
+
+export class CameraForbiddenError extends DomainError {
+  static readonly CODE = "CAMERA_FORBIDDEN";
+  readonly errorCode = CameraForbiddenError.CODE;
+
+  constructor() {
+    super("Camera is only available to a participant in an active direct call");
+  }
+}

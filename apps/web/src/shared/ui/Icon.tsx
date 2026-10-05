@@ -1,6 +1,8 @@
 import type { SVGProps } from "react";
 
 export type IconName =
+  | "camera"
+  | "camera-off"
   | "chevron-down"
   | "hash"
   | "headphones"
@@ -43,6 +45,19 @@ export function Icon({ name, ...props }: IconProps) {
 
 function pathFor(name: IconName) {
   switch (name) {
+    case "camera":
+      return (
+        <>
+          <rect x="2" y="5" width="15" height="14" rx="2" />
+          <path d="m17 10 5-3v10l-5-3" />
+        </>
+      );
+    case "camera-off":
+      return (
+        <>
+          <path d="m3 3 18 18M10 5h5a2 2 0 0 1 2 2v3l5-3v10l-3-2M17 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 .4-1.2" />
+        </>
+      );
     case "chevron-down":
       return <path d="m7 10 5 5 5-5" />;
     case "hash":

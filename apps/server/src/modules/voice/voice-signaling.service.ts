@@ -10,6 +10,7 @@ import type {
   RestartIcePayload,
   RestartIceResponse,
   ResumeConsumerPayload,
+  StopCameraPayload,
   SetVoiceModeratorStatePayload,
   SetVoiceSelfStatePayload,
   VoiceParticipantView,
@@ -21,6 +22,7 @@ import { VoiceParticipantControlService } from "./voice-participant-control.serv
 import { VoiceMediaSessionContextService } from "./voice-media-session-context.service.js";
 import { ScreenShareSignalingService } from "./screen-share-signaling.service.js";
 import { VoiceMicrophoneService } from "./voice-microphone.service.js";
+import { VoiceCameraService } from "./voice-camera.service.js";
 
 @Injectable()
 export class VoiceSignalingService {
@@ -30,6 +32,7 @@ export class VoiceSignalingService {
     private readonly contexts: VoiceMediaSessionContextService,
     private readonly screenShares: ScreenShareSignalingService,
     private readonly microphone: VoiceMicrophoneService,
+    private readonly camera: VoiceCameraService,
   ) {}
 
   async createTransport(
@@ -78,6 +81,10 @@ export class VoiceSignalingService {
   ): Promise<CreateProducerResponse> {
     const context = await this.contexts.resolve(userId, authenticationSessionId);
 
+    if (payload.source === "camera-video") {
+      const producer = await this.camera.create(userId, authenticationSessionId, context, payload);
+      return { producerId: producer.id };
+    }
     if (payload.source !== "microphone") {
       const producer = await this.screenShares.createProducer(userId, context, payload);
       return { producerId: producer.id };
@@ -91,9 +98,15 @@ export class VoiceSignalingService {
     authenticationSessionId: string,
     payload: CreateConsumerPayload,
   ): Promise<CreateConsumerResponse> {
-    const { participant } = await this.contexts.resolve(userId, authenticationSessionId);
-    if (
-      this.media.producerSource(payload.producerId) !== "microphone" &&
+    const { participant, mediaRoomId } = await this.contexts.resolve(
+      userId,
+      authenticationSessionId,
+    );
+    const source = this.media.producerSource(payload.producerId);
+    if (source === "camera-video") {
+      await this.camera.assertCanConsume(userId, authenticationSessionId, mediaRoomId);
+    } else if (
+      source !== "microphone" &&
       !this.screenShares.canConsume(participant.sessionId, payload.producerId)
     ) {
       throw new VoiceCannotConsumeError();
@@ -123,6 +136,15 @@ export class VoiceSignalingService {
       payload.consumerId,
       participant.selfDeafened || participant.moderatorDeafened,
     );
+  }
+
+  async stopCamera(
+    userId: string,
+    authenticationSessionId: string,
+    payload: StopCameraPayload,
+  ): Promise<void> {
+    const context = await this.contexts.resolve(userId, authenticationSessionId);
+    await this.camera.stop(userId, authenticationSessionId, context, payload);
   }
 
   async setSelfState(

@@ -145,6 +145,12 @@ export const en = {
     soundOff: "Mute audio",
     soundOn: "Enable audio",
     enableAudio: "Enable audio",
+    cameraOn: "Turn on camera",
+    cameraOff: "Turn off camera",
+    switchCamera: "Switch camera",
+    cameraPaused: "Video paused to keep audio clear",
+    ownCamera: "Your camera preview",
+    remoteCamera: "{{name}}’s camera",
     inProgress: "End the current call first",
     quality: {
       constrained: "The other person’s connection is unstable",

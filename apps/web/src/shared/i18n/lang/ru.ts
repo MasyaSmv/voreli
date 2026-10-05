@@ -143,6 +143,12 @@ export const ru = {
     soundOff: "Выключить звук",
     soundOn: "Включить звук",
     enableAudio: "Включить звук",
+    cameraOn: "Включить камеру",
+    cameraOff: "Выключить камеру",
+    switchCamera: "Сменить камеру",
+    cameraPaused: "Видео приостановлено, чтобы сохранить звук",
+    ownCamera: "Предпросмотр своей камеры",
+    remoteCamera: "Камера {{name}}",
     inProgress: "Сначала завершите текущий звонок",
     quality: {
       constrained: "У собеседника нестабильная связь",
