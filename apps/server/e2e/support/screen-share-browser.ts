@@ -123,6 +123,14 @@ export async function selectedInboundVideoPort(page: Page): Promise<number> {
 }
 
 export async function configureViewerDownlink(rateKbit: number): Promise<void> {
+  await configureMediaDownlink({ delayMs: 80, rateKbit });
+}
+
+export async function configureMediaDownlink(profile: {
+  readonly delayMs: number;
+  readonly lossPercent?: number;
+  readonly rateKbit?: number;
+}): Promise<void> {
   await clearViewerDownlink();
   await runTc(["qdisc", "add", "dev", "lo", "root", "handle", "1:", "prio", "bands", "3"]);
   await runTc([
@@ -136,11 +144,11 @@ export async function configureViewerDownlink(rateKbit: number): Promise<void> {
     "30:",
     "netem",
     "delay",
-    "80ms",
-    "rate",
-    `${String(rateKbit)}kbit`,
+    `${String(profile.delayMs)}ms`,
+    ...(profile.lossPercent === undefined ? [] : ["loss", `${String(profile.lossPercent)}%`]),
+    ...(profile.rateKbit === undefined ? [] : ["rate", `${String(profile.rateKbit)}kbit`]),
   ]);
-  for (let sourcePort = 41_000; sourcePort <= 41_010; sourcePort += 1) {
+  for (let sourcePort = 20_000; sourcePort <= 20_010; sourcePort += 1) {
     for (const protocol of ["ip", "ipv6"] as const) {
       for (const transport of ["udp", "tcp"] as const) {
         await runTc([
@@ -201,11 +209,9 @@ export function netemByteCount(qdisc: string): number {
 }
 
 export async function clearViewerDownlink(): Promise<void> {
-  try {
-    await execFileAsync("tc", ["qdisc", "del", "dev", "lo", "root"]);
-  } catch (error: unknown) {
-    console.warn("No screen-share netem qdisc to remove", { error });
-  }
+  const { stdout } = await execFileAsync("tc", ["qdisc", "show", "dev", "lo"]);
+  if (!stdout.includes("qdisc prio 1:")) return;
+  await execFileAsync("tc", ["qdisc", "del", "dev", "lo", "root"]);
 }
 
 async function runTc(arguments_: readonly string[]): Promise<void> {
