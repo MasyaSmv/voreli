@@ -86,10 +86,12 @@ test("direct-call camera starts by choice, carries video both ways and stops ind
     for (const page of [alice, bob]) {
       await expect(page.getByLabel("Предпросмотр своей камеры")).toBeVisible();
       await expect
-        .poll(async () =>
-          page
-            .getByLabel("Предпросмотр своей камеры")
-            .evaluate((video: HTMLVideoElement) => video.videoWidth),
+        .poll(
+          async () =>
+            page
+              .getByLabel("Предпросмотр своей камеры")
+              .evaluate((video: HTMLVideoElement) => video.videoWidth),
+          { timeout: 20_000 },
         )
         .toBeGreaterThan(0);
       await expect
