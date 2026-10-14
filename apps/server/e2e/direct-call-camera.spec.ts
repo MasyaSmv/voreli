@@ -3,10 +3,18 @@ import { randomUUID } from "node:crypto";
 
 import {
   closeContext,
+  inboundAudioBytes,
   mediaStats,
   voiceContext,
   waitForLiveAudio,
 } from "./support/voice-browser.js";
+import {
+  clearViewerDownlink,
+  configureMediaDownlink,
+  netemByteCount,
+  netemPacketCount,
+  viewerDownlinkQdisc,
+} from "./support/screen-share-browser.js";
 import {
   aliceUsername,
   bobUsername,
@@ -39,7 +47,8 @@ test.afterAll(disposeVoreliFixture);
 test("direct-call camera starts by choice, carries video both ways and stops independently of audio", async ({
   browser,
 }) => {
-  test.setTimeout(90_000);
+  const cameraNetemEnabled = process.env["CAMERA_NETEM"] === "1";
+  test.setTimeout(cameraNetemEnabled ? 150_000 : 90_000);
   const aliceContext = await voiceContext(browser, clientAddresses.alice);
   const bobContext = await voiceContext(browser, clientAddresses.bob);
   await aliceContext.grantPermissions(["microphone", "camera"]);
@@ -47,6 +56,7 @@ test("direct-call camera starts by choice, carries video both ways and stops ind
   const alice = await aliceContext.newPage();
   const bob = await bobContext.newPage();
   await bob.setViewportSize({ width: 390, height: 844 });
+  let netemApplied = false;
 
   try {
     await login(alice, aliceUsername);
@@ -88,6 +98,59 @@ test("direct-call camera starts by choice, carries video both ways and stops ind
         })
         .toBeGreaterThan(0);
     }
+    if (cameraNetemEnabled) {
+      const before = {
+        aliceAudio: await inboundAudioBytes(alice),
+        bobAudio: await inboundAudioBytes(bob),
+        bobVideo: await mediaStats(bob, "inbound-rtp", "video"),
+      };
+      netemApplied = true;
+      await configureMediaDownlink({ delayMs: 350, lossPercent: 5 });
+      await expect(alice.getByText("Видео приостановлено, чтобы сохранить звук")).toBeVisible({
+        timeout: 35_000,
+      });
+      await expect.poll(() => inboundAudioBytes(alice)).toBeGreaterThan(before.aliceAudio);
+      await expect.poll(() => inboundAudioBytes(bob)).toBeGreaterThan(before.bobAudio);
+      const impaired = {
+        aliceAudio: await inboundAudioBytes(alice),
+        bobAudio: await inboundAudioBytes(bob),
+        bobVideo: await mediaStats(bob, "inbound-rtp", "video"),
+        qdisc: await viewerDownlinkQdisc(),
+      };
+      expect(netemPacketCount(impaired.qdisc)).toBeGreaterThan(0);
+      expect(netemByteCount(impaired.qdisc)).toBeGreaterThan(10_000);
+      await clearViewerDownlink();
+      netemApplied = false;
+      await expect(alice.getByText("Видео приостановлено, чтобы сохранить звук")).not.toBeVisible({
+        timeout: 35_000,
+      });
+      await expect
+        .poll(async () => (await mediaStats(bob, "inbound-rtp", "video")).framesDecoded, {
+          timeout: 20_000,
+        })
+        .toBeGreaterThan(impaired.bobVideo.framesDecoded);
+      const recovered = {
+        aliceAudio: await inboundAudioBytes(alice),
+        bobAudio: await inboundAudioBytes(bob),
+        bobVideo: await mediaStats(bob, "inbound-rtp", "video"),
+      };
+      const measurement = {
+        profile: { delayMs: 350, lossPercent: 5 },
+        before,
+        impaired: {
+          aliceAudio: impaired.aliceAudio,
+          bobAudio: impaired.bobAudio,
+          bobVideo: impaired.bobVideo,
+          netemBytes: netemByteCount(impaired.qdisc),
+          netemPackets: netemPacketCount(impaired.qdisc),
+        },
+        recovered,
+      };
+      await test.info().attach("camera-netem", {
+        body: JSON.stringify(measurement, null, 2),
+        contentType: "application/json",
+      });
+    }
     await alice.getByRole("button", { name: "Выключить камеру" }).click();
     await expect(bob.getByLabel("Камера Alice")).not.toBeVisible();
     await waitForLiveAudio(alice, 1);
@@ -121,7 +184,11 @@ test("direct-call camera starts by choice, carries video both ways and stops ind
         .toBe(true);
     }
   } finally {
-    await closeContext(aliceContext);
-    await closeContext(bobContext);
+    try {
+      if (netemApplied) await clearViewerDownlink();
+    } finally {
+      await closeContext(aliceContext);
+      await closeContext(bobContext);
+    }
   }
 });
