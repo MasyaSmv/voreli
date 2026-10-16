@@ -2,7 +2,7 @@ import type { DirectCallView, PublicUser } from "@voreli/shared";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { useDirectCall } from "../../entities/direct-call/direct-call.store";
+import { DirectCallState } from "../../features/direct-call/direct-call-state";
 import { useSession } from "../../entities/session/session.store";
 import { useVoice } from "../../entities/voice/voice.store";
 import { DirectCallOverlay } from "./DirectCallOverlay";
@@ -37,15 +37,17 @@ function call(status: DirectCallView["status"]): DirectCallView {
 }
 
 describe("DirectCallOverlay", () => {
+  const state = new DirectCallState();
+
   afterEach(() => {
     useSession.setState({ user: null });
-    useDirectCall.getState().reset();
+    state.reset();
     useVoice.setState({ participants: [], connection: "idle" });
   });
 
   it("shows accept and decline only to the callee and focuses decline", async () => {
     useSession.setState({ user: bob });
-    useDirectCall.setState({ call: call("RINGING") });
+    state.pending(call("RINGING"));
     render(<DirectCallOverlay />);
 
     expect(screen.getByText("Входящий звонок")).toBeInTheDocument();
@@ -58,7 +60,7 @@ describe("DirectCallOverlay", () => {
 
   it("shows microphone, audio and hangup controls during an active call", () => {
     useSession.setState({ user: alice });
-    useDirectCall.setState({ call: call("ACTIVE"), mediaRoomId: "direct-call:call-id" });
+    state.activated(call("ACTIVE"), "direct-call:call-id");
     useVoice.setState({
       connection: "connected",
       participants: [
@@ -82,11 +84,12 @@ describe("DirectCallOverlay", () => {
 
   it("shows only degraded peer quality", async () => {
     useSession.setState({ user: alice });
-    useDirectCall.setState({ call: call("ACTIVE"), quality: "good" });
+    state.activated(call("ACTIVE"), "direct-call:call-id");
+    state.qualityChanged("good");
     render(<DirectCallOverlay />);
     expect(screen.queryByText(/связь/i)).not.toBeInTheDocument();
 
-    act(() => useDirectCall.getState().replace({ quality: "poor" }));
+    act(() => state.qualityChanged("poor"));
     await waitFor(() => expect(screen.getByText("У собеседника плохая связь")).toBeInTheDocument());
   });
 });

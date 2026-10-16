@@ -4,6 +4,7 @@ import { MESSAGE_PAGE_SIZE } from "@voreli/shared";
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import { MessageNotFoundError } from "./errors/chat-errors.js";
 import type { MessageWithAuthor } from "./message-presenter.js";
+import { messageAuthorSelect } from "./message-author.js";
 
 export interface HistoryQuery {
   readonly channelId: string;
@@ -37,7 +38,7 @@ export class MessageHistoryService {
   async byId(messageId: string): Promise<MessageWithAuthor> {
     const message = await this.prisma.db.message.findUnique({
       where: { id: messageId },
-      include: { author: true },
+      include: { author: { select: messageAuthorSelect } },
     });
 
     if (!message || message.deletedAt !== null) throw new MessageNotFoundError(messageId);
@@ -73,7 +74,7 @@ export class MessageHistoryService {
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit + 1,
-      include: { author: true },
+      include: { author: { select: messageAuthorSelect } },
     });
     const hasMore = messages.length > limit;
     const page = hasMore ? messages.slice(0, limit) : messages;

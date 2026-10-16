@@ -1,5 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent, type Ref, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
+import { useShallow } from "zustand/react/shallow";
 
 import { useDirectCall } from "../../entities/direct-call/direct-call.store";
 import { useSession } from "../../entities/session/session.store";
@@ -9,15 +10,38 @@ import { voiceSession } from "../../features/voice-join/voice-session";
 import { Avatar } from "../../shared/ui/Avatar";
 import { Icon } from "../../shared/ui/Icon";
 import { VoiceSettingsPopover } from "../voice-panel/VoiceSettingsPopover";
+import { OwnCameraPreview, RemoteCameraVideo } from "./CallCameraVideo";
 
 export function DirectCallOverlay() {
   const { t } = useTranslation();
   const currentUser = useSession((state) => state.user);
-  const state = useDirectCall();
-  const voice = useVoice();
+  // Field by field, not the whole stores: the voice store changes on every speaking tick,
+  // and none of that is anything this overlay shows.
+  const state = useDirectCall(
+    useShallow((current) => ({
+      call: current.call,
+      error: current.error,
+      quality: current.quality,
+      cameraStatus: current.cameraStatus,
+      cameraError: current.cameraError,
+      cameraSwitchAvailable: current.cameraSwitchAvailable,
+      cameraNetworkPaused: current.cameraNetworkPaused,
+      remoteCameraOn: current.remoteCameraOn,
+      reconnectingUserId: current.reconnectingUserId,
+    })),
+  );
+  const voiceConnection = useVoice((current) => current.connection);
+  const voiceError = useVoice((current) => current.error);
+  const ownVoice = useVoice(
+    useShallow((current) => {
+      const own = current.participants.find(
+        (participant) => participant.userId === currentUser?.id,
+      );
+      return own ? { selfMuted: own.selfMuted, selfDeafened: own.selfDeafened } : null;
+    }),
+  );
   const dialogRef = useRef<HTMLElement>(null);
   const declineRef = useRef<HTMLButtonElement>(null);
-  const ownVoice = voice.participants.find((participant) => participant.userId === currentUser?.id);
   const active = state.call?.status === "ACTIVE";
   const incoming = state.call?.status === "RINGING" && state.call.callee.id === currentUser?.id;
 
@@ -28,7 +52,7 @@ export function DirectCallOverlay() {
   if (!state.call || !currentUser) return null;
   const outgoing = state.call.caller.id === currentUser.id;
   const peer = outgoing ? state.call.callee : state.call.caller;
-  const reconnecting = voice.connection === "reconnecting" || state.reconnectingUserId !== null;
+  const reconnecting = voiceConnection === "reconnecting" || state.reconnectingUserId !== null;
 
   return (
     <div className="fixed inset-0 z-50 grid min-h-dvh bg-canvas sm:place-items-center sm:bg-black/65 sm:p-4 sm:backdrop-blur-sm">
@@ -49,14 +73,8 @@ export function DirectCallOverlay() {
       >
         <div className="flex flex-1 flex-col justify-center sm:flex-none">
           <div className="relative mx-auto flex w-full max-w-xl flex-1 items-center justify-center overflow-hidden rounded-card bg-panel-raised sm:mt-4 sm:aspect-video sm:flex-none">
-            {state.remoteCamera ? (
-              <video
-                ref={(element) => voiceSession.attachRemoteCamera(element)}
-                autoPlay
-                playsInline
-                className="h-full w-full object-cover"
-                aria-label={t("call.remoteCamera", { name: peer.displayName })}
-              />
+            {state.remoteCameraOn ? (
+              <RemoteCameraVideo label={t("call.remoteCamera", { name: peer.displayName })} />
             ) : (
               <Avatar
                 name={peer.displayName}
@@ -67,14 +85,7 @@ export function DirectCallOverlay() {
           </div>
           {state.cameraStatus === "on" ? (
             <div className="mt-2 flex items-center gap-3 rounded-control bg-panel-raised p-2 text-left">
-              <video
-                ref={(element) => voiceSession.attachOwnCamera(element)}
-                autoPlay
-                muted
-                playsInline
-                className="h-20 w-28 rounded-control border border-line bg-black object-cover -scale-x-100"
-                aria-label={t("call.ownCamera")}
-              />
+              <OwnCameraPreview label={t("call.ownCamera")} />
               <span className="text-sm text-ink-soft">{t("call.ownCamera")}</span>
               {state.cameraSwitchAvailable ? (
                 <button
@@ -108,9 +119,9 @@ export function DirectCallOverlay() {
                 : t("call.active")}
           </p>
 
-          {state.error || voice.error ? (
+          {state.error || voiceError ? (
             <div className="mt-3" role="alert">
-              <p className="text-sm text-danger-soft">{state.error ?? voice.error}</p>
+              <p className="text-sm text-danger-soft">{state.error ?? voiceError}</p>
               {active ? (
                 <button
                   type="button"
@@ -237,13 +248,7 @@ function CallButton({
     <button
       ref={buttonRef}
       type="button"
-      onClick={() =>
-        void action().catch((error: unknown) =>
-          useDirectCall
-            .getState()
-            .replace({ error: error instanceof Error ? error.message : "Call action failed" }),
-        )
-      }
+      onClick={() => void action().catch((error: unknown) => directCallSession.actionFailed(error))}
       aria-label={label}
       title={label}
       className={

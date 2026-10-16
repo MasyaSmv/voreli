@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { Attachment, Upload, User, Message } from "@prisma/client";
+import type { Attachment, Upload, Message } from "@prisma/client";
 import {
   decodeTextContent,
   type AttachmentView,
@@ -7,6 +7,7 @@ import {
   type ReactionSummary,
 } from "@voreli/shared";
 import { PrismaService } from "../../infra/database/prisma.service.js";
+import { messageAuthorSelect, type MessageAuthor } from "./message-author.js";
 
 export interface MessageRelations {
   readonly reply: MessageReplyPreview | null;
@@ -56,7 +57,7 @@ export class MessageReadModel {
       this.prisma.db.message.findMany({
         where: { id: { in: replyIds } },
         include: {
-          author: true,
+          author: { select: messageAuthorSelect },
           attachments: { take: 1, orderBy: { position: "asc" }, include: { upload: true } },
         },
       }),
@@ -105,7 +106,7 @@ export class MessageReadModel {
 }
 
 function replyView(
-  target: Message & { author: User; attachments: (Attachment & { upload: Upload })[] },
+  target: Message & { author: MessageAuthor; attachments: (Attachment & { upload: Upload })[] },
 ): MessageReplyPreview {
   return {
     id: target.id,

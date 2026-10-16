@@ -2,8 +2,8 @@ import { CallServerEvent } from "@voreli/shared";
 import { io } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { useDirectCall } from "../../entities/direct-call/direct-call.store";
 import { DirectCallSession } from "./direct-call-session";
+import { DirectCallState } from "./direct-call-state";
 
 describe("DirectCallSession socket ownership", () => {
   const socket = io("http://127.0.0.1:1/call", {
@@ -16,7 +16,7 @@ describe("DirectCallSession socket ownership", () => {
 
   afterEach(() => {
     session.reset();
-    useDirectCall.getState().reset();
+    new DirectCallState().reset();
   });
 
   it("binds one handler set after reset and reconnect", () => {

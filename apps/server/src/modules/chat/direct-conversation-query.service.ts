@@ -5,6 +5,7 @@ import { PrismaService } from "../../infra/database/prisma.service.js";
 import { contactPair } from "../relationships/contact-pair.js";
 import { ContactPolicyService } from "../relationships/contact-policy.service.js";
 import { MessagePresenter } from "./message-presenter.js";
+import { messageAuthorSelect } from "./message-author.js";
 
 interface UnreadRow {
   readonly conversationId: string;
@@ -29,7 +30,7 @@ export class DirectConversationQueryService {
           where: { deletedAt: null },
           orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
           take: 1,
-          include: { author: true },
+          include: { author: { select: messageAuthorSelect } },
         },
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],

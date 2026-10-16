@@ -10,6 +10,7 @@ import { CLOCK, type Clock } from "../../common/services/clock.js";
 import { ID_GENERATOR, type IdGenerator } from "../../common/services/id-generator.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import type { MessageWithAuthor } from "../chat/message-presenter.js";
+import { messageAuthorSelect } from "../chat/message-author.js";
 import {
   DirectCallAlreadyAnsweredError,
   DirectCallInvalidStateError,
@@ -177,7 +178,7 @@ export class DirectCallStore {
           content: Buffer.from(JSON.stringify(content)),
           contentSchema: CALL_EVENT_CONTENT_SCHEMA,
         },
-        include: { author: true },
+        include: { author: { select: messageAuthorSelect } },
       });
       await this.prisma.db.directCall.update({
         where: { id: callId },

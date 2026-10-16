@@ -11,6 +11,7 @@ import {
   SystemMessageImmutableError,
 } from "./errors/chat-errors.js";
 import type { MessageWithAuthor } from "./message-presenter.js";
+import { messageAuthorSelect } from "./message-author.js";
 
 export interface SendMessageInput {
   readonly channelId: string;
@@ -56,7 +57,7 @@ export class MessageCompositionService {
             authorId: input.authorId,
             clientNonce: input.clientNonce,
           },
-          include: { author: true },
+          include: { author: { select: messageAuthorSelect } },
         });
         if (previous) return previous;
       }
@@ -77,7 +78,7 @@ export class MessageCompositionService {
           replyToId: input.replyToId ?? null,
           clientNonce: input.clientNonce ?? null,
         },
-        include: { author: true },
+        include: { author: { select: messageAuthorSelect } },
       });
       // Stable lock order prevents two drafts listing the same uploads in reverse order deadlocking.
       for (const uploadId of [...attachments].sort()) {
