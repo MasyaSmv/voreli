@@ -17,17 +17,17 @@ import {
 } from "./voice-state.repository.js";
 import { MediaRoomAccessService } from "./media-room-access.service.js";
 import { VoiceRoomNotifier } from "./voice-room-notifier.js";
+import type { TransportFailureObserver } from "./transport-failure-observer.js";
 import { VoiceLocalMediaService } from "./voice-local-media.service.js";
 
 @Injectable()
-export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
+export class VoiceRoomService implements OnModuleInit, OnModuleDestroy, TransportFailureObserver {
   private readonly graceTimers = new Map<string, NodeJS.Timeout>();
   private readonly sessionOwners = new Map<string, { userId: string; channelId: string }>();
   private readonly reconnectSources = new Map<string, Set<"socket" | "transport">>();
   private readonly instanceId: string;
   private readonly graceMs: number;
-  private unsubscribeTransportFailure?: () => void;
-  private unsubscribeTransportReconnect?: () => void;
+  private unsubscribeTransport?: () => void;
 
   constructor(
     @Inject(VOICE_STATE_REPOSITORY) private readonly state: VoiceStateRepository,
@@ -43,18 +43,19 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    this.unsubscribeTransportFailure = this.localMedia.onTransportFailure((sessionId) =>
-      this.leaveSession(sessionId),
-    );
-    this.unsubscribeTransportReconnect = this.localMedia.onTransportReconnect(
-      (sessionId, reconnecting) =>
-        this.setSessionReconnectSource(sessionId, "transport", reconnecting),
-    );
+    this.unsubscribeTransport = this.localMedia.subscribeTransport(this);
+  }
+
+  transportFailed(sessionId: string): Promise<void> {
+    return this.leaveSession(sessionId);
+  }
+
+  transportReconnectChanged(sessionId: string, reconnecting: boolean): Promise<void> {
+    return this.setSessionReconnectSource(sessionId, "transport", reconnecting);
   }
 
   onModuleDestroy(): void {
-    this.unsubscribeTransportFailure?.();
-    this.unsubscribeTransportReconnect?.();
+    this.unsubscribeTransport?.();
     for (const timer of this.graceTimers.values()) {
       clearTimeout(timer);
     }

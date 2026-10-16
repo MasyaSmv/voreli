@@ -13,6 +13,9 @@ import {
   VoiceMediaObjectNotFoundError,
 } from "./errors/voice-media-errors.js";
 import { MediaSessionRegistry } from "./media-session.registry.js";
+import { ProducerAdmissionPolicy } from "./producer-admission.policy.js";
+import { TransportRecoveryService } from "./transport-recovery.service.js";
+import type { TransportFailureObserver } from "./transport-failure-observer.js";
 import { VoiceModule } from "./voice.module.js";
 
 describe("media session ownership", () => {
@@ -72,6 +75,54 @@ describe("media session ownership", () => {
     expect(send.closed).toBe(true);
     expect(recv.closed).toBe(true);
     routers.release("room-one");
+  });
+
+  it("publishes one reconnect transition for a recovering real transport", async () => {
+    const recovery = moduleRef.get(TransportRecoveryService);
+    const transitions: boolean[] = [];
+    const observer: TransportFailureObserver = {
+      transportFailed: () => {},
+      transportReconnectChanged: (_sessionId, reconnecting) => {
+        transitions.push(reconnecting);
+      },
+    };
+    const unsubscribe = recovery.subscribe(observer);
+    const handle = await routers.acquire("recovery-room");
+    registry.register("recovery-session", "recovery-room", handle);
+    const transport = await registry.createTransport("recovery-session", "send");
+    transport.emit("icestatechange", "disconnected");
+    transport.emit("icestatechange", "disconnected");
+    transport.emit("icestatechange", "connected");
+    await Promise.resolve();
+    expect(transitions).toEqual([true, false]);
+    registry.closeSession("recovery-session");
+    routers.release("recovery-room");
+    unsubscribe();
+  });
+
+  it("rejects duplicate and invalid producer sources using a real producer", async () => {
+    const admission = moduleRef.get(ProducerAdmissionPolicy);
+    const handle = await routers.acquire("admission-room");
+    registry.register("admission-session", "admission-room", handle);
+    const send = await registry.createTransport("admission-session", "send");
+    const producer = await registry.createProducer(
+      "admission-session",
+      send.id,
+      "audio",
+      rtpParameters(handle.router),
+      false,
+      "microphone",
+      null,
+    );
+    const producers = new Map([[producer.id, producer]]);
+    expect(() => admission.sourceKey(producers, new Set(), "audio", "microphone", null)).toThrow(
+      VoiceMediaObjectLimitError,
+    );
+    expect(() =>
+      admission.sourceKey(producers, new Set(), "video", "screen-audio", "screen-one"),
+    ).toThrow(VoiceMediaObjectLimitError);
+    registry.closeSession("admission-session");
+    routers.release("admission-room");
   });
 
   it("allows consuming another session in the room, including paused-first handshake", async () => {

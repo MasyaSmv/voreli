@@ -1,13 +1,13 @@
 import { Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import type { TransportDirection, VoiceMediaSource } from "@voreli/shared";
 import type { types } from "mediasoup";
 
-import type { EnvironmentVariables } from "../../config/env.validation.js";
 import type { VoiceRouterHandle } from "../../media/router-registry.service.js";
 import { TransportFactory } from "../../media/transport.factory.js";
+import { MediaConsumerService } from "./media-consumer.service.js";
+import { ProducerAdmissionPolicy } from "./producer-admission.policy.js";
+import { TransportRecoveryService } from "./transport-recovery.service.js";
 import {
-  VoiceCannotConsumeError,
   VoiceInvalidTransportDirectionError,
   VoiceMediaObjectLimitError,
   VoiceMediaObjectNotFoundError,
@@ -19,12 +19,6 @@ interface OwnedTransport {
   readonly transport: types.WebRtcTransport;
 }
 
-interface OwnedConsumer {
-  readonly consumer: types.Consumer;
-  readonly producerId: string;
-  clientReady: boolean;
-}
-
 interface MediaSession {
   readonly channelId: string;
   readonly router: types.Router;
@@ -32,7 +26,6 @@ interface MediaSession {
   readonly transports: Map<string, OwnedTransport>;
   readonly producers: Map<string, types.Producer>;
   readonly pendingProducers: Set<string>;
-  readonly consumers: Map<string, OwnedConsumer>;
 }
 
 interface RoomProducer {
@@ -48,27 +41,17 @@ export interface SessionProducerView {
   readonly screenStreamId: string | null;
 }
 
-type TransportFailureHandler = (sessionId: string) => Promise<void> | void;
-type TransportReconnectHandler = (sessionId: string, reconnecting: boolean) => Promise<void> | void;
-
 @Injectable()
 export class MediaSessionRegistry implements OnModuleDestroy {
   private readonly logger = new Logger(MediaSessionRegistry.name);
   private readonly sessions = new Map<string, MediaSession>();
   private readonly producers = new Map<string, RoomProducer>();
-  private readonly failureHandlers = new Set<TransportFailureHandler>();
-  private readonly reconnectHandlers = new Set<TransportReconnectHandler>();
-  private readonly reconnectingTransports = new Map<string, Set<string>>();
-  private readonly failedSessions = new Set<string>();
-  private readonly transportFailureTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly transportFailureGraceMs: number;
-
   constructor(
     private readonly transports: TransportFactory,
-    config: ConfigService<EnvironmentVariables, true>,
-  ) {
-    this.transportFailureGraceMs = config.get("VOICE_RECONNECT_GRACE", { infer: true }) * 1_000;
-  }
+    private readonly recovery: TransportRecoveryService,
+    private readonly producerAdmission: ProducerAdmissionPolicy,
+    private readonly consumers: MediaConsumerService,
+  ) {}
 
   register(sessionId: string, channelId: string, handle: VoiceRouterHandle): void {
     if (this.sessions.has(sessionId)) {
@@ -82,23 +65,13 @@ export class MediaSessionRegistry implements OnModuleDestroy {
       transports: new Map(),
       producers: new Map(),
       pendingProducers: new Set(),
-      consumers: new Map(),
     });
-    this.failedSessions.delete(sessionId);
+    this.consumers.register(sessionId);
+    this.recovery.register(sessionId);
   }
 
   has(sessionId: string): boolean {
     return this.sessions.has(sessionId);
-  }
-
-  onTransportFailure(handler: TransportFailureHandler): () => void {
-    this.failureHandlers.add(handler);
-    return () => this.failureHandlers.delete(handler);
-  }
-
-  onTransportReconnect(handler: TransportReconnectHandler): () => void {
-    this.reconnectHandlers.add(handler);
-    return () => this.reconnectHandlers.delete(handler);
   }
 
   async createTransport(
@@ -131,40 +104,10 @@ export class MediaSessionRegistry implements OnModuleDestroy {
         transportId: transport.id,
         direction,
       });
-      this.clearTransportFailureTimer(transport.id);
-      this.clearTransportReconnect(sessionId, transport.id);
+      this.recovery.clear(sessionId, transport.id);
       session.transports.delete(transport.id);
     });
-    transport.on("dtlsstatechange", (state) => {
-      this.logger.log({
-        message: "Voice transport DTLS state changed",
-        sessionId,
-        transportId: transport.id,
-        direction,
-        state,
-      });
-      if (state === "closed" || state === "failed") {
-        this.transportFailed(sessionId, transport);
-      }
-    });
-    transport.on("icestatechange", (state) => {
-      this.logger.log({
-        message: "Voice transport ICE state changed",
-        sessionId,
-        transportId: transport.id,
-        direction,
-        state,
-      });
-      if (state === "closed") {
-        this.transportFailed(sessionId, transport);
-      } else if (state === "disconnected") {
-        this.markTransportReconnecting(sessionId, transport.id);
-        this.scheduleTransportFailure(sessionId, transport);
-      } else if (state === "connected" || state === "completed") {
-        this.clearTransportFailureTimer(transport.id);
-        this.clearTransportReconnect(sessionId, transport.id);
-      }
-    });
+    this.recovery.observe(sessionId, direction, transport);
 
     return transport;
   }
@@ -222,27 +165,13 @@ export class MediaSessionRegistry implements OnModuleDestroy {
       throw new VoiceInvalidTransportDirectionError();
     }
 
-    const validSource =
-      (source === "microphone" && kind === "audio" && screenStreamId === null) ||
-      (source === "camera-video" && kind === "video" && screenStreamId === null) ||
-      (source === "screen-video" && kind === "video" && screenStreamId !== null) ||
-      (source === "screen-audio" && kind === "audio" && screenStreamId !== null);
-    const duplicateSource = [...session.producers.values()].some(
-      (current) =>
-        current.appData["source"] === source &&
-        (source === "microphone" ||
-          source === "camera-video" ||
-          current.appData["screenStreamId"] === screenStreamId),
+    const sourceKey = this.producerAdmission.sourceKey(
+      session.producers,
+      session.pendingProducers,
+      kind,
+      source,
+      screenStreamId,
     );
-    const sourceKey = `${source}:${screenStreamId ?? ""}`;
-    if (
-      session.producers.size + session.pendingProducers.size >= 4 ||
-      !validSource ||
-      duplicateSource ||
-      session.pendingProducers.has(sourceKey)
-    ) {
-      throw new VoiceMediaObjectLimitError("producer");
-    }
     session.pendingProducers.add(sourceKey);
     let producer: types.Producer;
     try {
@@ -279,48 +208,26 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     const session = this.session(sessionId);
     const transport = this.ownedTransport(sessionId, transportId);
     const source = this.producers.get(producerId);
-
-    if (transport.direction !== "recv") {
-      throw new VoiceInvalidTransportDirectionError();
-    }
-
-    if (
-      !source ||
-      source.channelId !== session.channelId ||
-      !session.router.canConsume({ producerId, rtpCapabilities })
-    ) {
-      throw new VoiceCannotConsumeError();
-    }
-
-    if ([...session.consumers.values()].some((owned) => owned.producerId === producerId)) {
-      throw new VoiceMediaObjectLimitError("consumer");
-    }
-
-    const consumer = await transport.transport.consume({
+    return this.consumers.create(
+      sessionId,
+      session.channelId,
+      session.router,
+      transport.transport,
+      transport.direction,
       producerId,
+      source?.channelId,
       rtpCapabilities,
-      paused: true,
-    });
-    const owned: OwnedConsumer = { consumer, producerId, clientReady: false };
-    session.consumers.set(consumer.id, owned);
-    consumer.observer.once("close", () => session.consumers.delete(consumer.id));
-    consumer.on("producerclose", () => session.consumers.delete(consumer.id));
-    return consumer;
+    );
   }
 
   async resumeConsumer(sessionId: string, consumerId: string, deafened: boolean): Promise<void> {
-    const owned = this.ownedConsumer(sessionId, consumerId);
-    owned.clientReady = true;
-
-    if (!deafened) {
-      await owned.consumer.resume();
-    }
+    this.session(sessionId);
+    await this.consumers.resume(sessionId, consumerId, deafened);
   }
 
   closeConsumersForProducers(sessionId: string, producerIds: ReadonlySet<string>): void {
-    for (const owned of this.session(sessionId).consumers.values()) {
-      if (producerIds.has(owned.producerId)) owned.consumer.close();
-    }
+    this.session(sessionId);
+    this.consumers.closeForProducers(sessionId, producerIds);
   }
 
   async setPreferredScreenLayer(
@@ -328,11 +235,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     producerIds: ReadonlySet<string>,
     spatialLayer: 0 | 1 | 2,
   ): Promise<void> {
-    await Promise.all(
-      [...this.session(sessionId).consumers.values()]
-        .filter((owned) => producerIds.has(owned.producerId) && owned.consumer.kind === "video")
-        .map((owned) => owned.consumer.setPreferredLayers({ spatialLayer })),
-    );
+    this.session(sessionId);
+    await this.consumers.setPreferredScreenLayer(sessionId, producerIds, spatialLayer);
   }
 
   async setScreenConsumersPaused(
@@ -340,16 +244,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     producerIds: ReadonlySet<string>,
     paused: boolean,
   ): Promise<void> {
-    await Promise.all(
-      [...this.session(sessionId).consumers.values()]
-        .filter(
-          (owned) =>
-            producerIds.has(owned.producerId) &&
-            owned.consumer.kind === "video" &&
-            (paused || owned.clientReady),
-        )
-        .map((owned) => (paused ? owned.consumer.pause() : owned.consumer.resume())),
-    );
+    this.session(sessionId);
+    await this.consumers.setScreenPaused(sessionId, producerIds, paused);
   }
 
   async setProducerPaused(sessionId: string, paused: boolean): Promise<void> {
@@ -365,11 +261,8 @@ export class MediaSessionRegistry implements OnModuleDestroy {
   }
 
   async setConsumersPaused(sessionId: string, paused: boolean): Promise<void> {
-    await Promise.all(
-      [...this.session(sessionId).consumers.values()]
-        .filter((owned) => owned.consumer.kind === "audio" && (paused || owned.clientReady))
-        .map((owned) => (paused ? owned.consumer.pause() : owned.consumer.resume())),
-    );
+    this.session(sessionId);
+    await this.consumers.setAudioPaused(sessionId, paused);
   }
 
   producersOfSession(sessionId: string): readonly SessionProducerView[] {
@@ -414,7 +307,7 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     }
 
     this.sessions.delete(sessionId);
-    this.reconnectingTransports.delete(sessionId);
+    this.recovery.closeSession(sessionId);
     const producers = [...session.producers.values()].map((producer) => ({
       producerId: producer.id,
       kind: producer.kind,
@@ -423,13 +316,13 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     }));
 
     for (const transport of session.transports.values()) {
-      this.clearTransportFailureTimer(transport.transport.id);
+      this.recovery.clear(sessionId, transport.transport.id);
       transport.transport.close();
     }
 
     session.transports.clear();
     session.producers.clear();
-    session.consumers.clear();
+    this.consumers.closeSession(sessionId);
     return producers;
   }
 
@@ -457,96 +350,5 @@ export class MediaSessionRegistry implements OnModuleDestroy {
     }
 
     return transport;
-  }
-
-  private ownedConsumer(sessionId: string, consumerId: string): OwnedConsumer {
-    const consumer = this.session(sessionId).consumers.get(consumerId);
-
-    if (!consumer) {
-      throw new VoiceMediaObjectNotFoundError();
-    }
-
-    return consumer;
-  }
-
-  private transportFailed(sessionId: string, transport: types.WebRtcTransport): void {
-    this.clearTransportFailureTimer(transport.id);
-    if (this.failedSessions.has(sessionId)) {
-      return;
-    }
-
-    this.failedSessions.add(sessionId);
-    this.markTransportReconnecting(sessionId, transport.id);
-
-    if (this.failureHandlers.size === 0 && !transport.closed) {
-      transport.close();
-      return;
-    }
-
-    for (const handler of this.failureHandlers) {
-      void Promise.resolve()
-        .then(() => handler(sessionId))
-        .catch((error: unknown) => {
-          this.logger.error({
-            message: "Failed to close voice session after transport failure",
-            error,
-            sessionId,
-            transportId: transport.id,
-            operation: "handleVoiceTransportFailure",
-          });
-        })
-        .finally(() => {
-          if (!transport.closed) transport.close();
-        });
-    }
-  }
-
-  private scheduleTransportFailure(sessionId: string, transport: types.WebRtcTransport): void {
-    if (this.transportFailureTimers.has(transport.id)) return;
-
-    const timer = setTimeout(() => {
-      this.transportFailureTimers.delete(transport.id);
-      if (!transport.closed) this.transportFailed(sessionId, transport);
-    }, this.transportFailureGraceMs);
-    timer.unref();
-    this.transportFailureTimers.set(transport.id, timer);
-  }
-
-  private clearTransportFailureTimer(transportId: string): void {
-    const timer = this.transportFailureTimers.get(transportId);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.transportFailureTimers.delete(transportId);
-  }
-
-  private markTransportReconnecting(sessionId: string, transportId: string): void {
-    const transports = this.reconnectingTransports.get(sessionId) ?? new Set<string>();
-    if (transports.has(transportId)) return;
-    const wasReconnecting = transports.size > 0;
-    transports.add(transportId);
-    this.reconnectingTransports.set(sessionId, transports);
-    if (!wasReconnecting) this.emitReconnect(sessionId, true);
-  }
-
-  private clearTransportReconnect(sessionId: string, transportId: string): void {
-    const transports = this.reconnectingTransports.get(sessionId);
-    if (!transports?.delete(transportId)) return;
-    if (transports.size > 0) return;
-    this.reconnectingTransports.delete(sessionId);
-    if (this.sessions.has(sessionId)) this.emitReconnect(sessionId, false);
-  }
-
-  private emitReconnect(sessionId: string, reconnecting: boolean): void {
-    for (const handler of this.reconnectHandlers) {
-      void Promise.resolve(handler(sessionId, reconnecting)).catch((error: unknown) => {
-        this.logger.error({
-          message: "Failed to publish voice transport reconnect state",
-          error,
-          sessionId,
-          reconnecting,
-          operation: "publishVoiceTransportReconnect",
-        });
-      });
-    }
   }
 }

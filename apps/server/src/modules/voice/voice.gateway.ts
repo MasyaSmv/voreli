@@ -1,4 +1,4 @@
-import { Inject, Logger, UseInterceptors } from "@nestjs/common";
+import { Inject, UseInterceptors } from "@nestjs/common";
 import {
   ConnectedSocket,
   MessageBody,
@@ -29,10 +29,10 @@ import {
   type AuthenticatedSocket,
 } from "../realtime/authenticated.gateway.js";
 import { SocketAuthenticationService } from "../realtime/socket-authentication.service.js";
-import { VoiceBroadcaster } from "./voice-broadcaster.js";
 import { VoiceRoomService } from "./voice-room.service.js";
 import { VoiceSignalingService } from "./voice-signaling.service.js";
 import { VoiceSocketMembershipService } from "./voice-socket-membership.service.js";
+import { VoiceSocketLifecycleService } from "./voice-socket-lifecycle.service.js";
 import { validateSocketPayload } from "../../common/validation/validate-socket-payload.js";
 import { SetVoiceModeratorStateDto, SetVoiceSelfStateDto } from "./dto/voice-control.dto.js";
 import {
@@ -56,8 +56,6 @@ import { ScreenShareSignalingService } from "./screen-share-signaling.service.js
 @WebSocketGateway({ namespace: VOICE_NAMESPACE })
 @UseInterceptors(WsRateLimitInterceptor)
 export class VoiceGateway extends AuthenticatedGateway {
-  private readonly disconnectLogger = new Logger(VoiceGateway.name);
-
   @WebSocketServer()
   private readonly server!: Namespace;
 
@@ -66,54 +64,26 @@ export class VoiceGateway extends AuthenticatedGateway {
     @Inject(DOMAIN_EVENT_BUS) events: DomainEventBus,
     private readonly rooms: VoiceRoomService,
     private readonly signaling: VoiceSignalingService,
-    private readonly broadcaster: VoiceBroadcaster,
     private readonly membership: VoiceSocketMembershipService,
     private readonly screenShares: ScreenShareSignalingService,
+    private readonly lifecycle: VoiceSocketLifecycleService,
   ) {
     super(authentication, events);
   }
 
   override afterInit(server: Namespace): void {
     super.afterInit(server);
-    this.broadcaster.attach(server);
-    this.membership.attach(server);
+    this.lifecycle.attach(server);
   }
 
   override handleConnection(socket: AuthenticatedSocket): void {
     super.handleConnection(socket);
-    socket.conn.on("packet", (packet: unknown) => {
-      if (
-        typeof packet === "object" &&
-        packet !== null &&
-        (packet as { type?: unknown }).type === "pong" &&
-        socket.identity
-      ) {
-        void this.rooms.touchPresence(socket.identity.user.id).catch((error: unknown) => {
-          this.disconnectLogger.error({
-            message: "Failed to refresh voice presence TTL",
-            error,
-            socketId: socket.id,
-            userId: socket.identity?.user.id,
-            operation: "touchVoicePresence",
-          });
-        });
-      }
-    });
+    this.lifecycle.connected(socket);
   }
 
   override handleDisconnect(socket: AuthenticatedSocket): void {
     super.handleDisconnect(socket);
-    if (socket.identity) {
-      void this.rooms.disconnect(socket.identity.user.id, socket.id).catch((error: unknown) => {
-        this.disconnectLogger.error({
-          message: "Failed to move disconnected voice participant into grace period",
-          error,
-          socketId: socket.id,
-          userId: socket.identity?.user.id,
-          operation: "disconnectVoiceSocket",
-        });
-      });
-    }
+    this.lifecycle.disconnected(socket);
   }
 
   @SubscribeMessage(VoiceClientEvent.Join)
