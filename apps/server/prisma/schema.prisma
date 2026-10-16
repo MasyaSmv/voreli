@@ -90,6 +90,8 @@ model FriendRequest {
 
   @@index([userLowId, status])
   @@index([userHighId, status])
+  // ON DELETE CASCADE from users: without it deleting a user seq-scans friend_requests.
+  @@index([requesterId])
   @@map("friend_requests")
 }
 
@@ -172,6 +174,8 @@ model DirectCall {
   @@index([calleeId, status, createdAt(sort: Desc)])
   @@index([callerId, status, createdAt(sort: Desc)])
   @@index([status, createdAt])
+  // ON DELETE SET NULL from users: the FK action has to find the calls the user ended.
+  @@index([endedById])
   @@map("direct_calls")
 }
 
@@ -335,6 +339,10 @@ model ChannelOverride {
   @@unique([channelId, roleId])
   @@unique([channelId, memberId])
   @@index([channelId])
+  // The unique pairs lead with channelId, so they cannot serve the cascade when a role or a
+  // member is deleted; both are routine operations and would seq-scan every override.
+  @@index([roleId])
+  @@index([memberId])
   @@map("channel_overrides")
 }
 
@@ -484,6 +492,8 @@ model Invite {
   createdBy User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
   @@index([serverId])
+  // ON DELETE CASCADE from users: deleting a user must find the invites they created.
+  @@index([createdById])
   @@map("invites")
 }
 
