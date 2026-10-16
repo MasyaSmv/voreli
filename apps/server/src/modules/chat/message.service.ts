@@ -10,6 +10,7 @@ import { DirectConversationService } from "../relationships/direct-conversation.
 import { ReplyTargetNotInChannelError } from "./errors/chat-errors.js";
 import { ChatBroadcaster } from "./chat-broadcaster.js";
 import { MessagePresenter, type MessageWithAuthor } from "./message-presenter.js";
+import { messageAuthorSelect } from "./message-author.js";
 import { MessageHistoryService } from "./message-history.service.js";
 import { SystemMessageImmutableError } from "./errors/chat-errors.js";
 
@@ -62,7 +63,7 @@ export class MessageService {
           authorId: input.authorId,
           clientNonce: input.clientNonce,
         },
-        include: { author: true },
+        include: { author: { select: messageAuthorSelect } },
       });
       if (existing) return existing;
     }
@@ -78,7 +79,7 @@ export class MessageService {
           replyToId: input.replyToId ?? null,
           clientNonce: input.clientNonce ?? null,
         },
-        include: { author: true },
+        include: { author: { select: messageAuthorSelect } },
       });
     } catch (error: unknown) {
       if (
@@ -92,7 +93,7 @@ export class MessageService {
             authorId: input.authorId,
             clientNonce: input.clientNonce,
           },
-          include: { author: true },
+          include: { author: { select: messageAuthorSelect } },
         });
       }
       throw error;
@@ -113,7 +114,7 @@ export class MessageService {
         content: Buffer.from(encodeTextContent(text)),
         editedAt: new Date(),
       },
-      include: { author: true },
+      include: { author: { select: messageAuthorSelect } },
     });
 
     // Announced here rather than by the caller: an edit is an edit whether it arrived over

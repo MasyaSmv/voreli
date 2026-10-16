@@ -371,6 +371,9 @@ model Message {
   @@index([channelId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([directConversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([authorId])
+  // ON DELETE SET NULL on the reply FK: without this index every deleted message (and every
+  // row of a cascading channel delete) seq-scans messages to find the replies to detach.
+  @@index([replyToId])
   @@map("messages")
 }
 

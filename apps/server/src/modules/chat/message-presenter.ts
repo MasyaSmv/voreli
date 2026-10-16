@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { Message, User } from "@prisma/client";
+import type { Message } from "@prisma/client";
 import {
   CALL_EVENT_CONTENT_SCHEMA,
   decodeCallEventContent,
@@ -8,9 +8,10 @@ import {
   type MessageView,
 } from "@voreli/shared";
 
+import type { MessageAuthor } from "./message-author.js";
 import { MessageReadModel, type MessageRelations } from "./message-read-model.js";
 
-export type MessageWithAuthor = Message & { author: User };
+export type MessageWithAuthor = Message & { author: MessageAuthor };
 
 /**
  * Turns a stored message into what a client may see, decoding the payload blob on the way.

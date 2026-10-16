@@ -1,52 +1,44 @@
 import type { CallConnectionQuality, DirectCallView } from "@voreli/shared";
 import { create } from "zustand";
 
-interface DirectCallState {
+export type CallCameraStatus = "off" | "starting" | "on" | "error";
+
+/**
+ * What the UI reads about the current direct call. Data only, on purpose: every write goes
+ * through `DirectCallState` in features/direct-call, which is the one writer of this store.
+ */
+export interface DirectCallSnapshot {
   readonly call: DirectCallView | null;
   readonly mediaRoomId: string | null;
   readonly quality: CallConnectionQuality;
   readonly error: string | null;
-  readonly cameraStatus: "off" | "starting" | "on" | "error";
+  readonly cameraStatus: CallCameraStatus;
   readonly cameraError: string | null;
   readonly cameraSwitchAvailable: boolean;
   readonly cameraNetworkPaused: boolean;
-  readonly remoteCamera: MediaStream | null;
+  /** The peer's camera is being received; the stream itself lives with the video binding. */
+  readonly remoteCameraOn: boolean;
   readonly reconnectingUserId: string | null;
   readonly historyRevision: number;
   readonly lastEndedConversationId: string | null;
-  replace(state: Partial<Omit<DirectCallState, "replace" | "reset" | "complete">>): void;
-  reset(): void;
-  complete(conversationId: string): void;
 }
 
-const initial = {
+/** Everything a finished or abandoned call resets; history bookkeeping survives it. */
+export const directCallIdle = {
   call: null,
   mediaRoomId: null,
-  quality: "unknown" as const,
+  quality: "unknown",
   error: null,
-  cameraStatus: "off" as const,
+  cameraStatus: "off",
   cameraError: null,
   cameraSwitchAvailable: false,
   cameraNetworkPaused: false,
-  remoteCamera: null,
+  remoteCameraOn: false,
   reconnectingUserId: null,
-};
+} as const satisfies Omit<DirectCallSnapshot, "historyRevision" | "lastEndedConversationId">;
 
-export const useDirectCall = create<DirectCallState>((set) => ({
-  ...initial,
+export const useDirectCall = create<DirectCallSnapshot>(() => ({
+  ...directCallIdle,
   historyRevision: 0,
   lastEndedConversationId: null,
-  replace: (state) => set(state),
-  reset: () =>
-    set((state) => ({
-      ...initial,
-      historyRevision: state.historyRevision,
-      lastEndedConversationId: state.lastEndedConversationId,
-    })),
-  complete: (conversationId) =>
-    set((state) => ({
-      ...initial,
-      historyRevision: state.historyRevision + 1,
-      lastEndedConversationId: conversationId,
-    })),
 }));

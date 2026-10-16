@@ -13,9 +13,9 @@ import {
 } from "@voreli/shared";
 import type { Socket } from "socket.io-client";
 
-import { useDirectCall } from "../../entities/direct-call/direct-call.store";
 import { callSocket } from "../../shared/api/socket";
 import { voiceSession } from "../voice-join/voice-session";
+import { DirectCallState } from "./direct-call-state";
 
 export class DirectCallSession {
   private socket: Socket | null = null;
@@ -27,42 +27,41 @@ export class DirectCallSession {
     void this.sync().catch((error: unknown) => this.fail(error));
   };
   private readonly onIncoming = ({ call }: CallEvent) => {
-    useDirectCall.getState().replace({ call, mediaRoomId: null, error: null });
+    this.state.pending(call);
   };
   private readonly onRinging = ({ call }: CallEvent) => {
-    useDirectCall.getState().replace({ call, mediaRoomId: null, error: null });
+    this.state.pending(call);
   };
   private readonly onAnswered = (event: CallAnsweredEvent) => {
     if (event.mediaRoomId !== null) {
       void this.activate(event.call, event.mediaRoomId);
     } else {
-      useDirectCall.getState().reset();
+      this.state.reset();
     }
   };
   private readonly onEnded = ({ call }: CallEvent) => {
-    if (useDirectCall.getState().call?.id !== call.id) return;
+    if (this.state.call?.id !== call.id) return;
     this.stopQualityObserver();
     void voiceSession
       .leave()
       .catch((error: unknown) => {
         console.error("Failed to announce voice leave after a direct call ended", error);
       })
-      .finally(() => useDirectCall.getState().complete(call.conversationId));
+      .finally(() => this.state.completed(call.conversationId));
   };
   private readonly onConnectionQuality = (event: CallConnectionQualityEvent) => {
-    if (useDirectCall.getState().call?.id === event.callId) {
-      useDirectCall.getState().replace({ quality: event.quality });
-    }
+    if (this.state.call?.id === event.callId) this.state.qualityChanged(event.quality);
   };
   private readonly onParticipantReconnecting = (event: CallParticipantReconnectingEvent) => {
-    if (useDirectCall.getState().call?.id === event.callId) {
-      useDirectCall.getState().replace({
-        reconnectingUserId: event.reconnecting ? event.userId : null,
-      });
+    if (this.state.call?.id === event.callId) {
+      this.state.peerReconnecting(event.reconnecting ? event.userId : null);
     }
   };
 
-  constructor(private readonly socketFactory: () => Socket = callSocket) {}
+  constructor(
+    private readonly socketFactory: () => Socket = callSocket,
+    private readonly state: DirectCallState = new DirectCallState(),
+  ) {}
 
   connect(): void {
     if (this.socket === null) {
@@ -82,18 +81,18 @@ export class DirectCallSession {
     this.joiningMediaRoomId = null;
     this.releasePreparedMicrophone();
     this.stopQualityObserver();
-    useDirectCall.getState().reset();
+    this.state.reset();
   }
 
   async start(conversationId: string): Promise<void> {
     voiceSession.unlockAudio();
-    useDirectCall.getState().replace({ error: null });
+    this.state.clearError();
     try {
       const response = await this.request<StartCallResponse>(CallClientEvent.Start, {
         conversationId,
         clientNonce: crypto.randomUUID(),
       });
-      useDirectCall.getState().replace({ call: response.call, error: null });
+      this.state.placed(response.call);
     } catch (error: unknown) {
       this.fail(error);
       throw error;
@@ -101,7 +100,7 @@ export class DirectCallSession {
   }
 
   async accept(): Promise<void> {
-    const call = useDirectCall.getState().call;
+    const call = this.state.call;
     if (!call) return;
     const microphone = voiceSession.captureMicrophone();
     void microphone.catch((error: unknown) => {
@@ -132,6 +131,12 @@ export class DirectCallSession {
     await this.terminal(CallClientEvent.Hangup);
   }
 
+  /** A button's action failed after the click; the overlay shows why instead of nothing. */
+  actionFailed(error: unknown): void {
+    console.warn("Direct-call action failed", { error });
+    this.state.failed(error instanceof Error ? error.message : "Call action failed");
+  }
+
   private bind(socket: Socket): void {
     socket.on("connect", this.onConnected);
     socket.on(CallServerEvent.Incoming, this.onIncoming);
@@ -153,7 +158,7 @@ export class DirectCallSession {
   }
 
   private async activate(call: DirectCallView, mediaRoomId: string): Promise<void> {
-    useDirectCall.getState().replace({ call, mediaRoomId, error: null });
+    this.state.activated(call, mediaRoomId);
     if (this.joiningMediaRoomId === mediaRoomId) return;
     this.joiningMediaRoomId = mediaRoomId;
     const microphone = this.preparedMicrophone;
@@ -170,9 +175,7 @@ export class DirectCallSession {
         callId: call.id,
         mediaRoomId,
       });
-      useDirectCall.getState().replace({
-        error: error instanceof Error ? error.message : "Call media connection failed",
-      });
+      this.state.failed(error instanceof Error ? error.message : "Call media connection failed");
     } finally {
       this.joiningMediaRoomId = null;
     }
@@ -181,28 +184,24 @@ export class DirectCallSession {
   private async sync(): Promise<void> {
     const response = await this.request<SyncCallResponse>(CallClientEvent.Sync, {});
     if (!response.call) {
-      const current = useDirectCall.getState().call;
+      const current = this.state.call;
       if (current) {
         await voiceSession.leave();
-        useDirectCall.getState().complete(current.conversationId);
+        this.state.completed(current.conversationId);
       } else {
-        useDirectCall.getState().reset();
+        this.state.reset();
       }
       return;
     }
     if (response.mediaRoomId) {
       await this.activate(response.call, response.mediaRoomId);
     } else {
-      useDirectCall.getState().replace({
-        call: response.call,
-        mediaRoomId: null,
-        error: null,
-      });
+      this.state.pending(response.call);
     }
   }
 
   private async terminal(event: string): Promise<void> {
-    const call = useDirectCall.getState().call;
+    const call = this.state.call;
     if (!call) return;
     await this.request<StartCallResponse>(event, { callId: call.id });
   }
@@ -238,9 +237,7 @@ export class DirectCallSession {
   }
 
   private fail(error: unknown): void {
-    useDirectCall.getState().replace({
-      error: error instanceof Error ? error.message : "Call signaling failed",
-    });
+    this.state.failed(error instanceof Error ? error.message : "Call signaling failed");
   }
 }
 
