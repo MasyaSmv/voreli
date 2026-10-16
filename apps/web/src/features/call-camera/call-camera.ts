@@ -1,14 +1,14 @@
 import type { CallConnectionQuality } from "@voreli/shared";
 
-import { sessionUserId, type OwnUserId } from "../voice-join/voice-identity";
-import type { VoiceSignaling } from "../voice-join/voice-signaling";
+import { sessionUserId, type OwnUserId } from "../../entities/session/session-identity";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
 import { BrowserCameraCapture, type CameraCapture } from "./camera-capture";
 import type { CameraMediaGraph, CameraVoiceRoom } from "./camera-media";
 import { CameraNetworkAdaptation } from "./camera-network-adaptation";
 import { CameraPublication } from "./camera-publication";
 import { CameraServerRelease } from "./camera-server-release";
 import { CameraVideoBinding } from "./camera-video-binding";
-import { DirectCallState } from "./direct-call-state";
+import { DirectCallState } from "../../entities/direct-call/direct-call-state";
 import { RemoteCameraReceiver } from "./remote-camera";
 
 /**

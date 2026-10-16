@@ -13,8 +13,8 @@ import {
   type VoiceMediaControl,
   type VoiceSessionLifecycle,
 } from "./voice-server-events";
-import type { VoiceSignaling } from "./voice-signaling";
-import { VoiceSessionState } from "./voice-state";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
+import { VoiceSessionState } from "../../entities/voice/voice-state";
 
 /**
  * A signaling channel that answers nothing and only delivers what the test pushes into it.

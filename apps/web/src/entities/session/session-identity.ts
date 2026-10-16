@@ -1,4 +1,4 @@
-import { useSession } from "../../entities/session/session.store";
+import { useSession } from "./session.store";
 
 /** Who "self" is inside a voice session. */
 export type OwnUserId = () => string | undefined;

@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DirectCallSession } from "./direct-call-session";
-import { DirectCallState } from "./direct-call-state";
+import { DirectCallState } from "../../entities/direct-call/direct-call-state";
 
 describe("DirectCallSession socket ownership", () => {
   const socket = io("http://127.0.0.1:1/call", {

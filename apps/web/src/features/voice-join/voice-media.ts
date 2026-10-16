@@ -8,12 +8,12 @@ import type { types } from "mediasoup-client";
 
 import { i18n } from "../../shared/i18n/i18n";
 import { ScreenMedia, type ScreenMediaGraph } from "../screen-share/screen-media";
-import type { OwnUserId } from "./voice-identity";
+import type { OwnUserId } from "../../entities/session/session-identity";
 import { observeProducerQuality } from "./voice-network-quality";
 import { VoicePlayback } from "./voice-playback";
-import { VoiceRequestError } from "./voice-request-error";
-import type { VoiceSignaling } from "./voice-signaling";
-import type { VoiceSessionState } from "./voice-state";
+import { VoiceRequestError } from "../../entities/voice/voice-request-error";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
+import type { VoiceSessionState } from "../../entities/voice/voice-state";
 import { createVoiceTransports, type VoiceTransports } from "./voice-transports";
 
 /** Opus settings for speech: DTX drops silence, FEC survives the loss that follows it. */

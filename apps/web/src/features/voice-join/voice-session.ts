@@ -9,17 +9,17 @@ import {
 } from "@voreli/shared";
 
 import { VoiceConnection } from "./voice-connection";
-import { sessionUserId } from "./voice-identity";
+import { sessionUserId } from "../../entities/session/session-identity";
 import { VoiceMedia } from "./voice-media";
 import { bindVoiceServerEvents } from "./voice-server-events";
-import { SocketVoiceSignaling } from "./voice-signaling";
+import { SocketVoiceSignaling } from "../../entities/voice/voice-signaling";
 import { VoiceSpeakingMonitor } from "./voice-speaking-monitor";
-import { VoiceSessionState } from "./voice-state";
+import { VoiceSessionState } from "../../entities/voice/voice-state";
 import { VoiceInputDevice } from "../voice-devices/voice-input-device";
 import { VoiceDeviceController } from "../voice-devices/voice-device-controller";
 import { ScreenShareController } from "../screen-share/screen-share-controller";
 import { ScreenShareViewer } from "../screen-share/screen-share-viewer";
-import { CallCamera } from "../direct-call/call-camera";
+import { CallCamera } from "../call-camera/call-camera";
 import { useVoice } from "../../entities/voice/voice.store";
 
 /**

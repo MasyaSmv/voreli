@@ -1,7 +1,7 @@
 import { type DirectCallView, VoiceClientEvent } from "@voreli/shared";
 
-import type { OwnUserId } from "../voice-join/voice-identity";
-import type { VoiceSignaling } from "../voice-join/voice-signaling";
+import type { OwnUserId } from "../../entities/session/session-identity";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
 import type { CameraConsumer, CameraMediaGraph, CameraView, CameraVoiceRoom } from "./camera-media";
 
 /** What receiving the peer's camera needs to know about the call, and the one fact it sets. */

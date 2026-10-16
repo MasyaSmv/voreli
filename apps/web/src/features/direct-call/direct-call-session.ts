@@ -15,7 +15,7 @@ import type { Socket } from "socket.io-client";
 
 import { callSocket } from "../../shared/api/socket";
 import { voiceSession } from "../voice-join/voice-session";
-import { DirectCallState } from "./direct-call-state";
+import { DirectCallState } from "../../entities/direct-call/direct-call-state";
 
 export class DirectCallSession {
   private socket: Socket | null = null;

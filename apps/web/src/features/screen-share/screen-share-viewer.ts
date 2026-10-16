@@ -4,8 +4,8 @@ import {
   VoiceClientEvent,
 } from "@voreli/shared";
 
-import type { VoiceSignaling } from "../voice-join/voice-signaling";
-import type { VoiceSessionState } from "../voice-join/voice-state";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
+import type { VoiceSessionState } from "../../entities/voice/voice-state";
 
 export interface ScreenViewingMedia {
   watchScreen(producers: ScreenShareProducersResponse["producers"]): Promise<boolean>;
