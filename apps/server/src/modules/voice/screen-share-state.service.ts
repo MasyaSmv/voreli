@@ -32,11 +32,21 @@ export class ScreenShareStateService {
     this.pendingBySession.set(share.sessionId, share);
   }
 
-  recordProducer(sessionId: string, producerId: string, source: VoiceMediaSource): void {
+  /**
+   * Returns false when the stream this producer was created for is no longer pending: it was
+   * aborted while the producer was being built, possibly with a new stream begun in its place.
+   */
+  recordProducer(
+    sessionId: string,
+    screenStreamId: string,
+    producerId: string,
+    source: VoiceMediaSource,
+  ): boolean {
     const pending = this.pendingBySession.get(sessionId);
-    if (!pending) return;
+    if (!pending || pending.id !== screenStreamId) return false;
     if (source === "screen-video") pending.videoProducerId = producerId;
     else pending.audioProducerId = producerId;
+    return true;
   }
 
   removePending(sessionId: string): void {
@@ -77,7 +87,7 @@ export class ScreenShareStateService {
     this.activeById.set(share.id, share);
   }
 
-  updateAudio(share: ActiveScreenShare): ActiveScreenShare {
+  withoutAudio(share: ActiveScreenShare): ActiveScreenShare {
     const updated = { ...share, audioProducerId: null };
     this.activeById.set(share.id, updated);
     return updated;

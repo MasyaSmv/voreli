@@ -75,12 +75,20 @@ export class ScreenShareLifecycleService {
         streamId,
       );
     } catch (error: unknown) {
-      if (pending.videoProducerId === null && pending.audioProducerId === null) {
+      if (
+        this.shares.pending(pending.sessionId)?.id === streamId &&
+        pending.videoProducerId === null &&
+        pending.audioProducerId === null
+      ) {
         this.shares.removePending(pending.sessionId);
       }
       throw error;
     }
-    this.shares.recordProducer(pending.sessionId, producer.id, payload.source);
+    if (!this.shares.recordProducer(pending.sessionId, streamId, producer.id, payload.source)) {
+      // Aborted mid-creation: nothing will ever start or stop this producer, so it must not outlive the request.
+      this.closeProducerIfPresent(pending.sessionId, producer.id);
+      throw new ScreenShareStateError();
+    }
     producer.observer.once("close", () => {
       void this.handleProducerClosed(streamId, producer.id).catch((error: unknown) =>
         this.logger.error({
@@ -183,7 +191,7 @@ export class ScreenShareLifecycleService {
     ) {
       throw new ScreenShareStateError();
     }
-    const updated = this.shares.updateAudio(active);
+    const updated = this.shares.withoutAudio(active);
     this.shares.startStopping(screenStreamId);
     try {
       this.closeProducerIfPresent(active.sessionId, active.audioProducerId);
@@ -240,7 +248,7 @@ export class ScreenShareLifecycleService {
     const active = this.shares.active(screenStreamId);
     if (active) {
       if (producerId === active.audioProducerId) {
-        const updated = this.shares.updateAudio(active);
+        const updated = this.shares.withoutAudio(active);
         try {
           await this.projection.save(updated);
         } finally {
