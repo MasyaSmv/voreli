@@ -6,8 +6,8 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import { useVoice } from "../../entities/voice/voice.store";
-import type { VoiceSignaling } from "../voice-join/voice-signaling";
-import { VoiceSessionState } from "../voice-join/voice-state";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
+import { VoiceSessionState } from "../../entities/voice/voice-state";
 import { ScreenShareViewer, type ScreenViewingMedia } from "./screen-share-viewer";
 
 class TestSignaling implements VoiceSignaling {

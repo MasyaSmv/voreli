@@ -2,7 +2,7 @@ import type { DirectCallView, PublicUser } from "@voreli/shared";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DirectCallState } from "../../features/direct-call/direct-call-state";
+import { DirectCallState } from "../../entities/direct-call/direct-call-state";
 import { useSession } from "../../entities/session/session.store";
 import { useVoice } from "../../entities/voice/voice.store";
 import { DirectCallOverlay } from "./DirectCallOverlay";

@@ -1,13 +1,6 @@
 import type { CallConnectionQuality, DirectCallView } from "@voreli/shared";
 
-import {
-  type CallCameraStatus,
-  directCallIdle,
-  useDirectCall,
-} from "../../entities/direct-call/direct-call.store";
-import type { CameraPauseIndicator } from "./camera-network-adaptation";
-import type { CameraPublicationState } from "./camera-publication";
-import type { RemoteCameraCallState } from "./remote-camera";
+import { type CallCameraStatus, directCallIdle, useDirectCall } from "./direct-call.store";
 
 /**
  * The only place that writes the direct-call store.
@@ -17,10 +10,11 @@ import type { RemoteCameraCallState } from "./remote-camera";
  * visible by name, and the camera pieces see this object only through their narrow ports,
  * so a camera bug cannot touch the call status and the reverse. It holds no fields of its
  * own: the store is the truth, read back through the getters below.
+ *
+ * The camera ports are declared by their consumers in features/call-camera, which an entity
+ * must not import; they are checked structurally where `CallCamera` hands this object over.
  */
-export class DirectCallState
-  implements CameraPublicationState, RemoteCameraCallState, CameraPauseIndicator
-{
+export class DirectCallState {
   get call(): DirectCallView | null {
     return useDirectCall.getState().call;
   }

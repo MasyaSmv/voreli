@@ -1,6 +1,6 @@
 import type { ScreenShareView, VoiceParticipantView, VoiceProducerView } from "@voreli/shared";
 
-import { useVoice } from "../../entities/voice/voice.store";
+import { useVoice } from "./voice.store";
 import { i18n } from "../../shared/i18n/i18n";
 
 /**

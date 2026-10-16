@@ -1,6 +1,6 @@
 import { VoiceClientEvent } from "@voreli/shared";
 
-import type { VoiceSignaling } from "../voice-join/voice-signaling";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
 
 interface PublishedCamera {
   readonly mediaRoomId: string;

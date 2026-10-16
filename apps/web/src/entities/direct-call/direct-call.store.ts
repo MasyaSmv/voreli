@@ -5,7 +5,7 @@ export type CallCameraStatus = "off" | "starting" | "on" | "error";
 
 /**
  * What the UI reads about the current direct call. Data only, on purpose: every write goes
- * through `DirectCallState` in features/direct-call, which is the one writer of this store.
+ * through `DirectCallState` next to it, which is the one writer of this store.
  */
 export interface DirectCallSnapshot {
   readonly call: DirectCallView | null;

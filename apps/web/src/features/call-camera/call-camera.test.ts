@@ -2,15 +2,15 @@ import { type CallConnectionQuality, type DirectCallView, VoiceClientEvent } fro
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { useDirectCall } from "../../entities/direct-call/direct-call.store";
-import type { VoiceSignaling } from "../voice-join/voice-signaling";
-import { VoiceSessionState } from "../voice-join/voice-state";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
+import { VoiceSessionState } from "../../entities/voice/voice-state";
 import { CallCamera } from "./call-camera";
 import type { CameraCapture } from "./camera-capture";
 import type { CameraConsumer, CameraMediaGraph, CameraProducer, CameraView } from "./camera-media";
 import { CameraNetworkAdaptation } from "./camera-network-adaptation";
 import { CameraPublication } from "./camera-publication";
 import { CameraServerRelease } from "./camera-server-release";
-import { DirectCallState } from "./direct-call-state";
+import { DirectCallState } from "../../entities/direct-call/direct-call-state";
 import { RemoteCameraReceiver } from "./remote-camera";
 
 /** A promise the test settles by hand, to land an event exactly inside an await. */

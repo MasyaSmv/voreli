@@ -1,7 +1,7 @@
 import { MicrophoneMeter } from "./microphone-meter";
 import { RemoteSpeakingHold } from "./remote-speaking-hold";
-import type { OwnUserId } from "./voice-identity";
-import type { VoiceSessionState } from "./voice-state";
+import type { OwnUserId } from "../../entities/session/session-identity";
+import type { VoiceSessionState } from "../../entities/voice/voice-state";
 import { i18n } from "../../shared/i18n/i18n";
 import { useVoiceSettings } from "../../entities/voice-settings/voice-settings.store";
 import { VoiceInputGate } from "../voice-input/voice-input-gate";

@@ -12,10 +12,10 @@ import {
   type ScreenShareStoppedEvent,
 } from "@voreli/shared";
 
-import { VoiceRequestError } from "./voice-request-error";
-import { sessionUserId } from "./voice-identity";
-import type { VoiceSignaling } from "./voice-signaling";
-import type { VoiceSessionState } from "./voice-state";
+import { VoiceRequestError } from "../../entities/voice/voice-request-error";
+import { sessionUserId } from "../../entities/session/session-identity";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
+import type { VoiceSessionState } from "../../entities/voice/voice-state";
 
 /** The two session-wide transitions the socket can force from outside a user action. */
 export interface VoiceSessionLifecycle {

@@ -1,7 +1,7 @@
 import type { VoiceParticipantView } from "@voreli/shared";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { useVoice } from "../../entities/voice/voice.store";
+import { useVoice } from "./voice.store";
 import { VoiceSessionState } from "./voice-state";
 
 const alice: VoiceParticipantView = {

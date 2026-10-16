@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { useVoice } from "../../entities/voice/voice.store";
 import { VoiceSpeakingMonitor } from "./voice-speaking-monitor";
-import { VoiceSessionState } from "./voice-state";
+import { VoiceSessionState } from "../../entities/voice/voice-state";
 
 const state = new VoiceSessionState();
 const ownUserId = "user-alice";

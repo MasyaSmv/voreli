@@ -1,10 +1,10 @@
 import { callIdFromMediaRoom, VoiceClientEvent, type VoiceJoinResponse } from "@voreli/shared";
 
-import { sessionUserId } from "./voice-identity";
+import { sessionUserId } from "../../entities/session/session-identity";
 import type { VoiceMedia } from "./voice-media";
-import type { VoiceSignaling } from "./voice-signaling";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
 import type { VoiceSpeakingMonitor } from "./voice-speaking-monitor";
-import type { VoiceSessionState } from "./voice-state";
+import type { VoiceSessionState } from "../../entities/voice/voice-state";
 
 /**
  * The owner of the microphone track. Capture goes through it and nowhere else: a track taken

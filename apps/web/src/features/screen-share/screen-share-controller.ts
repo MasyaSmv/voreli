@@ -1,8 +1,8 @@
 import { type ScreenShareResponse, VoiceClientEvent } from "@voreli/shared";
 import type { types } from "mediasoup-client";
 
-import type { VoiceSignaling } from "../voice-join/voice-signaling";
-import type { VoiceSessionState } from "../voice-join/voice-state";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
+import type { VoiceSessionState } from "../../entities/voice/voice-state";
 import { ScreenCaptureSource } from "./screen-capture-source";
 
 export interface ScreenPublishingMedia {

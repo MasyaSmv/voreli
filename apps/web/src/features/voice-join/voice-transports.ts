@@ -6,7 +6,7 @@ import {
 } from "@voreli/shared";
 import type { types } from "mediasoup-client";
 
-import type { VoiceSignaling } from "./voice-signaling";
+import type { VoiceSignaling } from "../../entities/voice/voice-signaling";
 
 export interface VoiceTransports {
   readonly send: types.Transport;
