@@ -7,6 +7,8 @@ import {
 } from "../../media/router-registry.service.js";
 import { MediaSessionRegistry, type SessionProducerView } from "./media-session.registry.js";
 import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
+import { TransportRecoveryService } from "./transport-recovery.service.js";
+import type { TransportFailureObserver } from "./transport-failure-observer.js";
 import { SpeakingService } from "./speaking.service.js";
 
 /** Coordinates the local mediasoup resources that back one distributed voice session. */
@@ -15,18 +17,13 @@ export class VoiceLocalMediaService {
   constructor(
     private readonly routers: RouterRegistryService,
     private readonly media: MediaSessionRegistry,
+    private readonly recovery: TransportRecoveryService,
     private readonly speaking: SpeakingService,
     private readonly screenShares: ScreenShareLifecycleService,
   ) {}
 
-  onTransportFailure(handler: (sessionId: string) => Promise<void> | void): () => void {
-    return this.media.onTransportFailure(handler);
-  }
-
-  onTransportReconnect(
-    handler: (sessionId: string, reconnecting: boolean) => Promise<void> | void,
-  ): () => void {
-    return this.media.onTransportReconnect(handler);
+  subscribeTransport(observer: TransportFailureObserver): () => void {
+    return this.recovery.subscribe(observer);
   }
 
   acquire(mediaRoomId: string): Promise<VoiceRouterHandle> {

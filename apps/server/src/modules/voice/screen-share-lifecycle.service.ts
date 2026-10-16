@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import {
   callIdFromMediaRoom,
   type CreateProducerPayload,
@@ -9,38 +9,25 @@ import type { types } from "mediasoup";
 
 import { ScreenShareForbiddenError, ScreenShareStateError } from "./errors/voice-media-errors.js";
 import { MediaSessionRegistry } from "./media-session.registry.js";
-import { VoiceBroadcaster } from "./voice-broadcaster.js";
 import { VoiceChannelAccessService } from "./voice-channel-access.service.js";
 import type { VoiceMediaSessionContext } from "./voice-media-session-context.service.js";
-import { VOICE_STATE_REPOSITORY, type VoiceStateRepository } from "./voice-state.repository.js";
+import { ScreenShareProjectionService } from "./screen-share-projection.service.js";
+import { ScreenShareStateService, type ActiveScreenShare } from "./screen-share-state.service.js";
 import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
-
-interface PendingScreenShare {
-  readonly id: string;
-  readonly mediaRoomId: string;
-  readonly userId: string;
-  readonly sessionId: string;
-  videoProducerId: string | null;
-  audioProducerId: string | null;
-}
 
 @Injectable()
 export class ScreenShareLifecycleService {
   private readonly logger = new Logger(ScreenShareLifecycleService.name);
-  private readonly pendingBySession = new Map<string, PendingScreenShare>();
-  private readonly activeById = new Map<string, ScreenShareView & { readonly sessionId: string }>();
-  private readonly stopping = new Set<string>();
-
   constructor(
     private readonly media: MediaSessionRegistry,
     private readonly access: VoiceChannelAccessService,
-    private readonly broadcaster: VoiceBroadcaster,
-    @Inject(VOICE_STATE_REPOSITORY) private readonly state: VoiceStateRepository,
+    private readonly projection: ScreenShareProjectionService,
     private readonly viewing: ScreenShareViewingService,
+    private readonly shares: ScreenShareStateService,
   ) {}
 
   activeIn(mediaRoomId: string): Promise<readonly ScreenShareView[]> {
-    return this.state.screenShares(mediaRoomId);
+    return this.projection.activeIn(mediaRoomId);
   }
 
   async createProducer(
@@ -57,13 +44,9 @@ export class ScreenShareLifecycleService {
       throw new ScreenShareForbiddenError();
     }
 
-    let pending = this.pendingBySession.get(context.participant.sessionId);
+    let pending = this.shares.pending(context.participant.sessionId);
     if (payload.source === "screen-video") {
-      if (
-        [...this.activeById.values()].some(
-          (screenShare) => screenShare.sessionId === context.participant.sessionId,
-        )
-      ) {
+      if (this.shares.activeForSession(context.participant.sessionId) !== undefined) {
         throw new ScreenShareStateError("A participant can share only one screen at a time");
       }
       if (pending && pending.id !== streamId) throw new ScreenShareStateError();
@@ -75,7 +58,7 @@ export class ScreenShareLifecycleService {
         videoProducerId: null,
         audioProducerId: null,
       };
-      this.pendingBySession.set(context.participant.sessionId, pending);
+      this.shares.begin(pending);
     } else if (!pending || pending.id !== streamId || pending.videoProducerId === null) {
       throw new ScreenShareStateError("Screen video must be created before screen audio");
     }
@@ -93,12 +76,11 @@ export class ScreenShareLifecycleService {
       );
     } catch (error: unknown) {
       if (pending.videoProducerId === null && pending.audioProducerId === null) {
-        this.pendingBySession.delete(pending.sessionId);
+        this.shares.removePending(pending.sessionId);
       }
       throw error;
     }
-    if (payload.source === "screen-video") pending.videoProducerId = producer.id;
-    else pending.audioProducerId = producer.id;
+    this.shares.recordProducer(pending.sessionId, producer.id, payload.source);
     producer.observer.once("close", () => {
       void this.handleProducerClosed(streamId, producer.id).catch((error: unknown) =>
         this.logger.error({
@@ -118,7 +100,7 @@ export class ScreenShareLifecycleService {
     videoProducerId: string,
     audioProducerId?: string,
   ): Promise<ScreenShareView> {
-    const pending = this.pendingBySession.get(context.participant.sessionId);
+    const pending = this.shares.pending(context.participant.sessionId);
     if (
       !pending ||
       pending.userId !== userId ||
@@ -128,7 +110,7 @@ export class ScreenShareLifecycleService {
     ) {
       throw new ScreenShareStateError();
     }
-    const view: ScreenShareView & { readonly sessionId: string } = {
+    const view: ActiveScreenShare = {
       id: pending.id,
       mediaRoomId: pending.mediaRoomId,
       userId,
@@ -136,22 +118,22 @@ export class ScreenShareLifecycleService {
       videoProducerId,
       audioProducerId: pending.audioProducerId,
     };
-    this.pendingBySession.delete(pending.sessionId);
-    this.activeById.set(view.id, view);
+    this.shares.removePending(pending.sessionId);
+    this.shares.activate(view);
     try {
-      await this.state.saveScreenShare(view);
+      await this.projection.save(view);
     } catch (error: unknown) {
-      this.activeById.delete(view.id);
-      this.stopping.add(view.id);
+      this.shares.removeActive(view.id);
+      this.shares.startStopping(view.id);
       try {
         this.closeProducerIfPresent(view.sessionId, view.audioProducerId);
         this.closeProducerIfPresent(view.sessionId, view.videoProducerId);
       } finally {
-        this.stopping.delete(view.id);
+        this.shares.stopStopping(view.id);
       }
       throw error;
     }
-    this.broadcaster.screenStarted(view.mediaRoomId, view);
+    this.projection.started(view);
     return view;
   }
 
@@ -160,7 +142,7 @@ export class ScreenShareLifecycleService {
     context: VoiceMediaSessionContext,
     screenStreamId: string,
   ): Promise<void> {
-    const active = this.activeById.get(screenStreamId);
+    const active = this.shares.active(screenStreamId);
     if (!active || active.userId !== userId || active.sessionId !== context.participant.sessionId) {
       throw new ScreenShareStateError();
     }
@@ -168,7 +150,7 @@ export class ScreenShareLifecycleService {
   }
 
   abort(userId: string, context: VoiceMediaSessionContext, screenStreamId: string): void {
-    const pending = this.pendingBySession.get(context.participant.sessionId);
+    const pending = this.shares.pending(context.participant.sessionId);
     if (
       !pending ||
       pending.id !== screenStreamId ||
@@ -177,13 +159,13 @@ export class ScreenShareLifecycleService {
     ) {
       throw new ScreenShareStateError();
     }
-    this.pendingBySession.delete(pending.sessionId);
-    this.stopping.add(pending.id);
+    this.shares.removePending(pending.sessionId);
+    this.shares.startStopping(pending.id);
     try {
       this.closeProducerIfPresent(pending.sessionId, pending.audioProducerId);
       this.closeProducerIfPresent(pending.sessionId, pending.videoProducerId);
     } finally {
-      this.stopping.delete(pending.id);
+      this.shares.stopStopping(pending.id);
     }
   }
 
@@ -192,7 +174,7 @@ export class ScreenShareLifecycleService {
     context: VoiceMediaSessionContext,
     screenStreamId: string,
   ): Promise<void> {
-    const active = this.activeById.get(screenStreamId);
+    const active = this.shares.active(screenStreamId);
     if (
       !active ||
       active.userId !== userId ||
@@ -201,18 +183,17 @@ export class ScreenShareLifecycleService {
     ) {
       throw new ScreenShareStateError();
     }
-    const updated = { ...active, audioProducerId: null };
-    this.activeById.set(screenStreamId, updated);
-    this.stopping.add(screenStreamId);
+    const updated = this.shares.updateAudio(active);
+    this.shares.startStopping(screenStreamId);
     try {
       this.closeProducerIfPresent(active.sessionId, active.audioProducerId);
     } finally {
-      this.stopping.delete(screenStreamId);
+      this.shares.stopStopping(screenStreamId);
     }
     try {
-      await this.state.saveScreenShare(updated);
+      await this.projection.save(updated);
     } finally {
-      this.broadcaster.screenUpdated(active.mediaRoomId, updated);
+      this.projection.updated(updated);
     }
   }
 
@@ -221,23 +202,19 @@ export class ScreenShareLifecycleService {
     reason: "left" | "permission-revoked" | "failed",
   ): Promise<void> {
     this.viewing.stopSession(sessionId);
-    const pending = this.pendingBySession.get(sessionId);
+    const pending = this.shares.pending(sessionId);
     if (pending) {
-      this.pendingBySession.delete(sessionId);
+      this.shares.removePending(sessionId);
       this.closeProducerIfPresent(sessionId, pending.audioProducerId);
       this.closeProducerIfPresent(sessionId, pending.videoProducerId);
     }
-    const active = [...this.activeById.values()].find((share) => share.sessionId === sessionId);
+    const active = this.shares.activeForSession(sessionId);
     if (active) await this.stopActive(active, reason);
   }
 
   async stopForUser(userId: string, mediaRoomId: string): Promise<void> {
-    const pending = [...this.pendingBySession.values()].find(
-      (share) => share.userId === userId && share.mediaRoomId === mediaRoomId,
-    );
-    const active = [...this.activeById.values()].find(
-      (share) => share.userId === userId && share.mediaRoomId === mediaRoomId,
-    );
+    const pending = this.shares.pendingForUser(userId, mediaRoomId);
+    const active = this.shares.activeForUser(userId, mediaRoomId);
     if (pending) await this.stopForSession(pending.sessionId, "permission-revoked");
     else if (active) await this.stopForSession(active.sessionId, "permission-revoked");
   }
@@ -247,7 +224,7 @@ export class ScreenShareLifecycleService {
     requestedMediaRoomId: string,
     screenStreamId: string,
   ): readonly VoiceProducerView[] {
-    const active = this.activeById.get(screenStreamId);
+    const active = this.shares.active(screenStreamId);
     if (
       requestedMediaRoomId !== context.mediaRoomId ||
       !active ||
@@ -259,52 +236,42 @@ export class ScreenShareLifecycleService {
   }
 
   private async handleProducerClosed(screenStreamId: string, producerId: string): Promise<void> {
-    if (this.stopping.has(screenStreamId)) return;
-    const active = this.activeById.get(screenStreamId);
+    if (this.shares.isStopping(screenStreamId)) return;
+    const active = this.shares.active(screenStreamId);
     if (active) {
       if (producerId === active.audioProducerId) {
-        const updated = { ...active, audioProducerId: null };
-        this.activeById.set(screenStreamId, updated);
+        const updated = this.shares.updateAudio(active);
         try {
-          await this.state.saveScreenShare(updated);
+          await this.projection.save(updated);
         } finally {
-          this.broadcaster.screenUpdated(active.mediaRoomId, updated);
+          this.projection.updated(updated);
         }
       } else {
         await this.stopActive(active, "track-ended");
       }
       return;
     }
-    for (const [sessionId, pending] of this.pendingBySession) {
-      if (pending.videoProducerId !== producerId && pending.audioProducerId !== producerId)
-        continue;
-      if (pending.audioProducerId === producerId) {
-        pending.audioProducerId = null;
-      } else {
-        this.pendingBySession.delete(sessionId);
-        this.closeProducerIfPresent(sessionId, pending.audioProducerId);
-      }
-      break;
-    }
+    const closed = this.shares.producerClosed(producerId);
+    if (closed) this.closeProducerIfPresent(closed.sessionId, closed.audioProducerId);
   }
 
   private async stopActive(
-    active: ScreenShareView & { readonly sessionId: string },
+    active: ActiveScreenShare,
     reason: "stopped" | "track-ended" | "left" | "permission-revoked" | "failed",
   ): Promise<void> {
-    this.stopping.add(active.id);
-    this.activeById.delete(active.id);
+    this.shares.startStopping(active.id);
+    this.shares.removeActive(active.id);
     this.viewing.stopShare(active.id);
     let persistenceError: unknown;
     try {
       try {
-        await this.state.removeScreenShare(active.mediaRoomId, active.id);
+        await this.projection.remove(active.mediaRoomId, active.id);
       } catch (error: unknown) {
         persistenceError = error;
       }
       this.closeProducerIfPresent(active.sessionId, active.audioProducerId);
       this.closeProducerIfPresent(active.sessionId, active.videoProducerId);
-      this.broadcaster.screenStopped(active.mediaRoomId, active.id, reason);
+      this.projection.stopped(active.mediaRoomId, active.id, reason);
       if (persistenceError) {
         throw persistenceError instanceof Error
           ? persistenceError
@@ -318,7 +285,7 @@ export class ScreenShareLifecycleService {
       });
       throw error;
     } finally {
-      this.stopping.delete(active.id);
+      this.shares.stopStopping(active.id);
     }
   }
 
@@ -328,9 +295,7 @@ export class ScreenShareLifecycleService {
     }
   }
 
-  private producers(
-    active: ScreenShareView & { readonly sessionId: string },
-  ): readonly VoiceProducerView[] {
+  private producers(active: ActiveScreenShare): readonly VoiceProducerView[] {
     return [active.videoProducerId, active.audioProducerId]
       .filter((producerId): producerId is string => producerId !== null)
       .map((producerId) => this.media.producerOfSession(active.sessionId, producerId))

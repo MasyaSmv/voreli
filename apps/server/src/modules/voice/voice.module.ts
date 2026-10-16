@@ -9,10 +9,14 @@ import { PermissionsModule } from "../permissions/permissions.module.js";
 import { RealtimeModule } from "../realtime/realtime.module.js";
 import { CallsModule } from "../calls/calls.module.js";
 import { RedisVoiceStateRepository } from "./redis-voice-state.repository.js";
+import { MediaConsumerService } from "./media-consumer.service.js";
+import { ProducerAdmissionPolicy } from "./producer-admission.policy.js";
+import { TransportRecoveryService } from "./transport-recovery.service.js";
 import { MediaSessionRegistry } from "./media-session.registry.js";
 import { MediaRoomAccessService } from "./media-room-access.service.js";
 import { VoiceChannelAccessService } from "./voice-channel-access.service.js";
 import { VoiceBroadcaster } from "./voice-broadcaster.js";
+import { VoiceSocketLifecycleService } from "./voice-socket-lifecycle.service.js";
 import { VoiceGateway } from "./voice.gateway.js";
 import { VoicePermissionRevalidationService } from "./voice-permission-revalidation.service.js";
 import { VoiceRoomService } from "./voice-room.service.js";
@@ -25,6 +29,8 @@ import { SpeakingService } from "./speaking.service.js";
 import { VoiceModerationPolicy } from "./voice-moderation.policy.js";
 import { VoiceParticipantControlService } from "./voice-participant-control.service.js";
 import { VoiceMediaSessionContextService } from "./voice-media-session-context.service.js";
+import { ScreenShareProjectionService } from "./screen-share-projection.service.js";
+import { ScreenShareStateService } from "./screen-share-state.service.js";
 import { ScreenShareLifecycleService } from "./screen-share-lifecycle.service.js";
 import { ScreenShareViewingService } from "./screen-share-viewing.service.js";
 import { ScreenShareSignalingService } from "./screen-share-signaling.service.js";
@@ -45,10 +51,14 @@ import { VoiceCameraService } from "./voice-camera.service.js";
     CallsModule,
   ],
   providers: [
+    MediaConsumerService,
+    ProducerAdmissionPolicy,
+    TransportRecoveryService,
     MediaSessionRegistry,
     MediaRoomAccessService,
     VoiceChannelAccessService,
     VoiceBroadcaster,
+    VoiceSocketLifecycleService,
     VoiceGateway,
     VoicePermissionRevalidationService,
     VoiceRoomService,
@@ -61,6 +71,8 @@ import { VoiceCameraService } from "./voice-camera.service.js";
     VoiceParticipantControlService,
     VoiceMediaSessionContextService,
     ScreenShareViewingService,
+    ScreenShareProjectionService,
+    ScreenShareStateService,
     ScreenShareLifecycleService,
     ScreenShareSignalingService,
     VoiceMicrophoneService,
