@@ -336,9 +336,10 @@ model ChannelOverride {
   role    Role?   @relation(fields: [roleId], references: [id], onDelete: Cascade)
   member  Member? @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
+  // Lookups by channel and the channel cascade use the leading channelId of either unique
+  // pair; a separate channelId index would only duplicate it.
   @@unique([channelId, roleId])
   @@unique([channelId, memberId])
-  @@index([channelId])
   // The unique pairs lead with channelId, so they cannot serve the cascade when a role or a
   // member is deleted; both are routine operations and would seq-scan every override.
   @@index([roleId])
@@ -443,8 +444,8 @@ model Attachment {
   upload  Upload  @relation(fields: [uploadId], references: [id], onDelete: Restrict)
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
+  // Also serves lookups and the cascade by messageId, already in position order.
   @@unique([messageId, position])
-  @@index([messageId])
   @@map("attachments")
 }
 
