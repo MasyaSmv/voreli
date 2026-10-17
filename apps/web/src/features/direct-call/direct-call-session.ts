@@ -228,7 +228,7 @@ export class DirectCallSession {
       console.warn("Prepared direct-call microphone was unavailable during cleanup", { error });
       return null;
     });
-    voiceSession.releaseIdleMicrophone();
+    voiceSession.releasePreparedMicrophone();
   }
 
   private stopQualityObserver(): void {

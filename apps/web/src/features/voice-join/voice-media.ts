@@ -42,6 +42,7 @@ export class VoiceMedia implements ScreenMediaGraph {
   private inputGateOpen = false;
   private networkQuality: "good" | "constrained" | "poor" | "unknown" = "unknown";
   private readonly playback = new VoicePlayback();
+  private readonly consuming = new Map<string, Promise<void>>();
   private readonly screen = new ScreenMedia(this);
 
   constructor(
@@ -85,14 +86,12 @@ export class VoiceMedia implements ScreenMediaGraph {
 
     const track = await this.produce(stream);
     this.applyProducerPause();
+    // The store, not `joined.participants`: a producer announced between the join answer and
+    // this line was turned away by consumeRemote and is recorded nowhere else.
     await Promise.all(
-      joined.participants.flatMap((participant) =>
-        participant.userId === this.ownUserId()
-          ? []
-          : participant.producers
-              .filter((producer) => producer.source === "microphone")
-              .map((producer) => this.consume(producer.producerId)),
-      ),
+      this.state
+        .remoteMicrophoneProducerIds(this.ownUserId())
+        .map((producerId) => this.consume(producerId)),
     );
     return track;
   }
@@ -100,11 +99,29 @@ export class VoiceMedia implements ScreenMediaGraph {
   /** Consumes a producer that belongs to someone else; own audio is only consumed by echo. */
   async consumeRemote(userId: string, producerId: string): Promise<void> {
     if (userId === this.ownUserId()) return;
+    // No receive transport yet means build() is still running, and it consumes every
+    // producer in the store once the transport exists. Failing here instead would lose the
+    // stream for good: the event is not repeated.
+    if (!this.transports) return;
     await this.consume(producerId);
   }
 
-  async consume(producerId: string): Promise<void> {
-    if (this.playback.has(producerId)) return;
+  /**
+   * One consumer per producer even when the build pass and a producer event ask for the same
+   * stream at once: the playback check alone passes for both while the first is in flight.
+   */
+  consume(producerId: string): Promise<void> {
+    if (this.playback.has(producerId)) return Promise.resolve();
+    const inFlight = this.consuming.get(producerId);
+    if (inFlight) return inFlight;
+    const consuming = this.startConsuming(producerId).finally(() => {
+      if (this.consuming.get(producerId) === consuming) this.consuming.delete(producerId);
+    });
+    this.consuming.set(producerId, consuming);
+    return consuming;
+  }
+
+  private async startConsuming(producerId: string): Promise<void> {
     const consumer = await this.createConsumer(producerId);
     await this.playback.add(producerId, consumer, this.deafened);
     this.playback.setJitterBufferTarget(
@@ -192,6 +209,9 @@ export class VoiceMedia implements ScreenMediaGraph {
     this.transports?.send.close();
     this.transports?.recv.close();
     this.playback.closeAll();
+    // A consume still in flight belongs to the transport just closed; a rebuilt graph must not
+    // wait on it instead of creating its own.
+    this.consuming.clear();
     this.screen.close();
     this.producer = undefined;
     this.transports = undefined;

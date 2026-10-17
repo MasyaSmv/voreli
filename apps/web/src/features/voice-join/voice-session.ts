@@ -271,6 +271,11 @@ class VoiceSession {
     this.devices.releaseIdleInput();
   }
 
+  /** Releases what captureMicrophone took when the session it was taken for never started. */
+  releasePreparedMicrophone(): void {
+    this.devices.releaseUnusedSessionInput();
+  }
+
   async selectInputDevice(deviceId: string | null): Promise<void> {
     await this.devices.selectInput(deviceId);
   }

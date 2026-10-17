@@ -25,6 +25,14 @@ export interface VoiceDeviceSessionState {
 
 /** Owns capture, replacement, preview and devicechange reconciliation. */
 export class VoiceDeviceController implements VoiceInputTarget {
+  /**
+   * A session capture is spoken for before the session exists: accepting a call takes the
+   * microphone first and joins afterwards, and a join waits its turn in the session queue.
+   * Without this mark that capture looks idle to a preview's cleanup, which then stops the
+   * track the join is about to produce from.
+   */
+  private sessionCapture = false;
+
   constructor(
     private readonly input: VoiceInputDevice,
     private readonly media: VoiceDeviceMedia,
@@ -39,7 +47,9 @@ export class VoiceDeviceController implements VoiceInputTarget {
     });
   }
 
+  /** Capture for a session, current or about to be joined; previews use their own path. */
   capture(): Promise<MediaStream> {
+    this.sessionCapture = true;
     return this.input.capture(useVoiceSettings.getState().inputDeviceId);
   }
 
@@ -49,16 +59,23 @@ export class VoiceDeviceController implements VoiceInputTarget {
 
   async preview(): Promise<void> {
     this.meter.unlockAudio();
-    const stream = await this.capture();
+    const stream = await this.input.capture(useVoiceSettings.getState().inputDeviceId);
     const track = stream.getAudioTracks()[0];
     if (track) this.observeInputTrack(track);
   }
 
   /**
-   * Drops a capture taken for something that never became a session — a preview, or a call
-   * that was abandoned before it connected. A live session keeps its microphone.
+   * Drops a preview capture. A live session keeps its microphone, and so does a session that
+   * is still being joined.
    */
   releaseIdleInput(): void {
+    if (this.state.isActive || this.sessionCapture) return;
+    this.meter.stopMetering();
+    this.release();
+  }
+
+  /** Drops a capture taken for a session that never came — a call abandoned before it joined. */
+  releaseUnusedSessionInput(): void {
     if (this.state.isActive) return;
     this.meter.stopMetering();
     this.release();
@@ -104,6 +121,7 @@ export class VoiceDeviceController implements VoiceInputTarget {
   }
 
   release(): void {
+    this.sessionCapture = false;
     this.input.release();
   }
 
