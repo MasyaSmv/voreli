@@ -96,16 +96,10 @@ class VoiceSession {
   }
 
   joinMediaRoom(mediaRoomId: string, preparedMicrophone?: Promise<MediaStream>): Promise<void> {
-    if (this.state.channelId === mediaRoomId && this.state.isActive) {
-      if (preparedMicrophone) {
-        void preparedMicrophone
-          .then((stream) => stream.getTracks().forEach((track) => track.stop()))
-          .catch((error: unknown) => {
-            console.error("Failed to dispose duplicate prepared microphone", { error });
-          });
-      }
-      return Promise.resolve();
-    }
+    // A prepared microphone came from captureMicrophone, so its track is the one the device
+    // owner holds — in an active room, the very track the producer sends. Nothing here may
+    // stop it; the owner releases it when the session ends.
+    if (this.state.channelId === mediaRoomId && this.state.isActive) return Promise.resolve();
     this.speaking.unlockAudio();
     this.screenShare.close();
     this.screenViewer.close();
