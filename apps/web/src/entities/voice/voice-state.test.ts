@@ -106,4 +106,44 @@ describe("VoiceSessionState", () => {
     expect(state.participant(alice.userId)).toEqual({ ...alice, producers: [] });
     expect(useVoice.getState().participants).toHaveLength(2);
   });
+
+  // Regression: a direct-call peer whose producer was announced while our transports were
+  // still being created stayed silent for the whole call. The join snapshot predates that
+  // producer, so the media build has to read the store the event wrote to.
+  it("lists a microphone announced after the join snapshot for the media build", () => {
+    state.joined("channel-one", "session-one", [{ ...alice, producers: [] }, bob]);
+
+    state.addProducer(alice.userId, {
+      producerId: "producer-alice-late",
+      kind: "audio",
+      source: "microphone",
+      screenStreamId: null,
+    });
+
+    expect(state.remoteMicrophoneProducerIds(bob.userId)).toEqual(["producer-alice-late"]);
+  });
+
+  it("leaves own, closed and non-microphone producers out of the media build", () => {
+    state.joined("channel-one", "session-one", [
+      alice,
+      {
+        ...bob,
+        producers: [
+          { producerId: "producer-bob", kind: "audio", source: "microphone", screenStreamId: null },
+          {
+            producerId: "producer-bob-screen",
+            kind: "audio",
+            source: "screen-audio",
+            screenStreamId: "screen-bob",
+          },
+        ],
+      },
+    ]);
+
+    expect(state.remoteMicrophoneProducerIds(alice.userId)).toEqual(["producer-bob"]);
+
+    state.removeProducer("producer-bob");
+
+    expect(state.remoteMicrophoneProducerIds(alice.userId)).toEqual([]);
+  });
 });

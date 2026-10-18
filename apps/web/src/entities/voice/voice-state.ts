@@ -114,6 +114,22 @@ export class VoiceSessionState {
     });
   }
 
+  /**
+   * Microphone producers of everyone but the caller, as the store knows them right now. A
+   * freshly built media graph consumes from here rather than from the join snapshot: a producer
+   * announced while the graph was still being built exists only in the store.
+   */
+  remoteMicrophoneProducerIds(ownUserId: string | undefined): readonly string[] {
+    return useVoice
+      .getState()
+      .participants.filter((participant) => participant.userId !== ownUserId)
+      .flatMap((participant) =>
+        participant.producers
+          .filter((producer) => producer.source === "microphone")
+          .map((producer) => producer.producerId),
+      );
+  }
+
   removeProducer(producerId: string): void {
     for (const participant of useVoice.getState().participants) {
       if (!participant.producers.some((producer) => producer.producerId === producerId)) continue;
