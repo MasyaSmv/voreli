@@ -2,6 +2,9 @@ FROM node:24-bookworm AS build
 
 WORKDIR /app
 RUN corepack enable
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
