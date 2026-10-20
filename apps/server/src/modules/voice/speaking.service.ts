@@ -1,5 +1,5 @@
 import { Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
-import type { types } from "mediasoup";
+import { errors, type types } from "mediasoup";
 
 import { RouterRegistryService } from "../../media/router-registry.service.js";
 import { VoiceBroadcaster } from "./voice-broadcaster.js";
@@ -38,13 +38,24 @@ export class SpeakingService implements OnModuleDestroy {
     try {
       await room.observer.removeProducer({ producerId });
     } catch (error: unknown) {
-      this.logger.error({
-        message: "Failed to remove voice producer from audio observer",
+      const context = {
         error,
+        errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
         channelId,
         producerId,
         operation: "removeSpeakingProducer",
-      });
+      };
+      if (error instanceof errors.NotFoundError) {
+        this.logger.warn({
+          message: "Voice producer already absent from audio observer",
+          ...context,
+        });
+      } else {
+        this.logger.error({
+          message: "Failed to remove voice producer from audio observer",
+          ...context,
+        });
+      }
     }
   }
 
