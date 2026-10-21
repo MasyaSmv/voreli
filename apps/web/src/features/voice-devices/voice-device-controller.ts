@@ -147,7 +147,7 @@ export class VoiceDeviceController implements VoiceInputTarget {
         await this.selectInput(null);
       } catch (error: unknown) {
         console.error("Failed to fall back to the default microphone", { error });
-        this.input.release();
+        this.release();
         this.meter.closeMicrophoneInput();
       }
     }
