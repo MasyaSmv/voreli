@@ -63,26 +63,16 @@ test("direct call rings, carries RTP and resumes the same call after a network b
     await alice.getByRole("button", { name: "Позвонить Bob" }).click();
     await expect(bob.getByText("Входящий звонок")).toBeVisible();
     await expect(bobSecond.getByText("Входящий звонок")).toBeVisible();
-    // Both devices must press before either accept is answered. `locator.click()` cannot
-    // promise that: it waits for the button to be stable in each tab separately, and when the
-    // other tab's accept wins first the overlay is gone and the click retries until the test
-    // times out. So both buttons are made actionable first, and the two presses are then
-    // dispatched together as real mouse input.
-    const acceptPoints = await Promise.all(
-      [bob, bobSecond].map(async (page) => {
-        const button = page.getByRole("button", { name: "Принять звонок" });
-        await button.click({ trial: true });
-        const box = await button.boundingBox();
-        if (!box) throw new Error("Accept button has no layout box");
-        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-      }),
+    // Dispatch both accepts without Playwright waiting for the overlay animation to settle.
+    // A normal locator click can retry after the other device already won and removed it.
+    const acceptButtons = [bob, bobSecond].map((page) =>
+      page.getByRole("button", { name: "Принять звонок" }),
     );
+    await Promise.all(acceptButtons.map((button) => expect(button).toBeVisible()));
     await Promise.all(
-      [bob, bobSecond].map((page, index) => {
-        const point = acceptPoints[index];
-        if (!point) throw new Error("Accept button point is missing");
-        return page.mouse.click(point.x, point.y);
-      }),
+      acceptButtons.map((button) =>
+        button.evaluate((element: HTMLButtonElement) => element.click()),
+      ),
     );
     await expect(alice.getByText("Разговор идёт")).toBeVisible();
     await expect

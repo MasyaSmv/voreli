@@ -106,7 +106,10 @@ export class VoiceGateway extends AuthenticatedGateway {
         command.sessionId,
       );
       await this.membership.move(socket, mediaRoomId);
-      return { ok: true as const, data: response };
+      return {
+        ok: true as const,
+        data: await this.rooms.refreshJoinSnapshot(mediaRoomId, response),
+      };
     });
   }
 

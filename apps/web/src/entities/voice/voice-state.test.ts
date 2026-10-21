@@ -85,6 +85,40 @@ describe("VoiceSessionState", () => {
     expect(state.participant(bob.userId)?.producers).toEqual([producer]);
   });
 
+  it("replays room changes received while a join snapshot is in flight", () => {
+    const producer = {
+      producerId: "producer-bob-late",
+      kind: "audio" as const,
+      source: "microphone" as const,
+      screenStreamId: null,
+    };
+
+    state.beginSnapshot();
+    state.upsertParticipant(bob);
+    state.addProducer(bob.userId, producer);
+    state.joined("channel-one", "session-one", [alice]);
+
+    expect(state.participant(bob.userId)?.producers).toEqual([producer]);
+    expect(state.remoteMicrophoneProducerIds(alice.userId)).toEqual([producer.producerId]);
+  });
+
+  it("replays closures after announcements during a resumed join", () => {
+    state.joined("channel-one", "session-one", [alice, bob]);
+    state.beginSnapshot();
+    state.addProducer(bob.userId, {
+      producerId: "producer-bob-late",
+      kind: "audio",
+      source: "microphone",
+      screenStreamId: null,
+    });
+    state.removeProducer("producer-bob-late");
+    state.removeParticipant(alice.userId);
+    state.resumed("session-one", [alice, bob]);
+
+    expect(state.participant(alice.userId)).toBeUndefined();
+    expect(state.participant(bob.userId)?.producers).toEqual([]);
+  });
+
   it("ignores a producer for someone who is not in the room", () => {
     state.joined("channel-one", "session-one", [bob]);
 

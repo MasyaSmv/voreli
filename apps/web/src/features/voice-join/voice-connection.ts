@@ -61,6 +61,7 @@ export class VoiceConnection {
         this.closeMedia();
       }
 
+      this.state.beginSnapshot();
       const joined = await this.signaling.request<VoiceJoinResponse>(
         VoiceClientEvent.Join,
         target === "channel" ? { channelId } : { mediaRoomId: channelId },
@@ -72,6 +73,7 @@ export class VoiceConnection {
       await this.buildMedia(joined, stream);
       this.state.connected();
     } catch (error: unknown) {
+      this.state.cancelSnapshot();
       await this.abort(microphone, stream, joinedServer);
       throw error;
     }
@@ -85,13 +87,20 @@ export class VoiceConnection {
     const { channelId, sessionId } = this.state;
     if (channelId === null || sessionId === null) return;
 
-    const joined = await this.signaling.request<VoiceJoinResponse>(
-      VoiceClientEvent.Join,
-      callIdFromMediaRoom(channelId) !== null
-        ? { mediaRoomId: channelId, sessionId }
-        : { channelId, sessionId },
-    );
-    this.state.resumed(joined.sessionId, joined.participants, joined.screenShares);
+    this.state.beginSnapshot();
+    let joined: VoiceJoinResponse;
+    try {
+      joined = await this.signaling.request<VoiceJoinResponse>(
+        VoiceClientEvent.Join,
+        callIdFromMediaRoom(channelId) !== null
+          ? { mediaRoomId: channelId, sessionId }
+          : { channelId, sessionId },
+      );
+      this.state.resumed(joined.sessionId, joined.participants, joined.screenShares);
+    } catch (error: unknown) {
+      this.state.cancelSnapshot();
+      throw error;
+    }
 
     if (joined.resumed) {
       const own = this.state.participant(sessionUserId());
