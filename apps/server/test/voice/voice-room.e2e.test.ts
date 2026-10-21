@@ -64,6 +64,32 @@ describe("voice room lifecycle", () => {
     expect(resumed.sessionId).toBe(joined.sessionId);
   });
 
+  it("refreshes a join response with room changes made after its first snapshot", async () => {
+    const member = await factories.member(server);
+    try {
+      const original = await rooms.join(
+        server.ownerId,
+        "owner-auth",
+        "owner-socket",
+        firstChannelId,
+      );
+      expect(original.participants.map((participant) => participant.userId)).toEqual([
+        server.ownerId,
+      ]);
+
+      await rooms.join(member.id, "member-auth", "member-socket", firstChannelId);
+      const refreshed = await rooms.refreshJoinSnapshot(firstChannelId, original);
+
+      expect(refreshed.sessionId).toBe(original.sessionId);
+      expect(refreshed.participants.map((participant) => participant.userId)).toEqual(
+        expect.arrayContaining([server.ownerId, member.id]),
+      );
+      expect(refreshed.participants).toHaveLength(2);
+    } finally {
+      await rooms.leaveUser(member.id);
+    }
+  });
+
   it("leaves the previous voice channel before joining the next one", async () => {
     await rooms.join(server.ownerId, "auth-session", "socket", firstChannelId);
     await rooms.join(server.ownerId, "auth-session", "socket", secondChannelId);

@@ -13,6 +13,8 @@ import { i18n } from "../../shared/i18n/i18n";
  * is two truths that can only ever drift apart.
  */
 export class VoiceSessionState {
+  private snapshotEvents: Array<() => void> | null = null;
+
   get channelId(): string | null {
     return useVoice.getState().channelId;
   }
@@ -39,6 +41,21 @@ export class VoiceSessionState {
     useVoice.getState().replace({ connection: "joining", error: null });
   }
 
+  /** Keep room events in arrival order while a join acknowledgement is in flight. */
+  beginSnapshot(): void {
+    this.snapshotEvents = [];
+  }
+
+  cancelSnapshot(): void {
+    this.snapshotEvents = null;
+  }
+
+  private replaySnapshotEvents(): void {
+    const events = this.snapshotEvents ?? [];
+    this.snapshotEvents = null;
+    for (const apply of events) apply();
+  }
+
   joined(
     channelId: string,
     sessionId: string,
@@ -46,6 +63,7 @@ export class VoiceSessionState {
     screenShares: readonly ScreenShareView[] = [],
   ): void {
     useVoice.getState().replace({ channelId, sessionId, participants, screenShares });
+    this.replaySnapshotEvents();
   }
 
   connected(): void {
@@ -62,6 +80,7 @@ export class VoiceSessionState {
     screenShares: readonly ScreenShareView[] = [],
   ): void {
     useVoice.getState().replace({ sessionId, participants, screenShares, connection: "connected" });
+    this.replaySnapshotEvents();
   }
 
   /**
@@ -69,6 +88,7 @@ export class VoiceSessionState {
    * thing the user still needs on screen.
    */
   idle(options: { readonly clearError: boolean } = { clearError: false }): void {
+    this.cancelSnapshot();
     useVoice.getState().replace({
       channelId: null,
       sessionId: null,
@@ -97,14 +117,26 @@ export class VoiceSessionState {
   }
 
   upsertParticipant(participant: VoiceParticipantView): void {
+    if (this.snapshotEvents) {
+      this.snapshotEvents.push(() => this.upsertParticipant(participant));
+      return;
+    }
     useVoice.getState().upsertParticipant(participant);
   }
 
   removeParticipant(userId: string): void {
+    if (this.snapshotEvents) {
+      this.snapshotEvents.push(() => this.removeParticipant(userId));
+      return;
+    }
     useVoice.getState().removeParticipant(userId);
   }
 
   addProducer(userId: string, producer: VoiceProducerView): void {
+    if (this.snapshotEvents) {
+      this.snapshotEvents.push(() => this.addProducer(userId, producer));
+      return;
+    }
     const participant = this.participant(userId);
     if (!participant) return;
     if (participant.producers.some(({ producerId }) => producerId === producer.producerId)) return;
@@ -131,6 +163,10 @@ export class VoiceSessionState {
   }
 
   removeProducer(producerId: string): void {
+    if (this.snapshotEvents) {
+      this.snapshotEvents.push(() => this.removeProducer(producerId));
+      return;
+    }
     for (const participant of useVoice.getState().participants) {
       if (!participant.producers.some((producer) => producer.producerId === producerId)) continue;
       useVoice.getState().upsertParticipant({
@@ -141,10 +177,18 @@ export class VoiceSessionState {
   }
 
   upsertScreenShare(screenShare: ScreenShareView): void {
+    if (this.snapshotEvents) {
+      this.snapshotEvents.push(() => this.upsertScreenShare(screenShare));
+      return;
+    }
     useVoice.getState().upsertScreenShare(screenShare);
   }
 
   removeScreenShare(screenStreamId: string): void {
+    if (this.snapshotEvents) {
+      this.snapshotEvents.push(() => this.removeScreenShare(screenStreamId));
+      return;
+    }
     useVoice.getState().removeScreenShare(screenStreamId);
   }
 

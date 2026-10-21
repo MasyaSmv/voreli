@@ -151,6 +151,18 @@ export class VoiceRoomService implements OnModuleInit, OnModuleDestroy, Transpor
     }
   }
 
+  /** Refresh the join response after its socket has joined the broadcast room. */
+  async refreshJoinSnapshot(
+    channelId: string,
+    response: VoiceJoinResponse,
+  ): Promise<VoiceJoinResponse> {
+    return {
+      ...response,
+      participants: await this.views(channelId),
+      screenShares: await this.localMedia.activeScreenShares(channelId),
+    };
+  }
+
   async leaveUser(userId: string): Promise<void> {
     const channelId = await this.state.channelOf(userId);
     if (!channelId) return;
