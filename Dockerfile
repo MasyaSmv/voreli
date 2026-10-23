@@ -25,6 +25,7 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules node_modules
+COPY --from=build /app/package.json package.json
 COPY --from=build /app/apps/server/node_modules apps/server/node_modules
 COPY --from=build /app/packages/shared/node_modules packages/shared/node_modules
 COPY --from=build /app/packages/shared/package.json packages/shared/package.json

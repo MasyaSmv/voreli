@@ -3,6 +3,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { validateEnv } from "../config/env.validation.js";
+import { MediaConfig } from "./media.config.js";
 import { MediaModule } from "./media.module.js";
 import { RouterRegistryService } from "./router-registry.service.js";
 import { TransportFactory } from "./transport.factory.js";
@@ -27,8 +28,15 @@ describe("media infrastructure", () => {
     expect(slot).toBeDefined();
 
     const serverDump = await slot!.webRtcServer.dump();
-    expect(serverDump.udpSockets).toContainEqual({ ip: "0.0.0.0", port: 40000 });
-    expect(serverDump.tcpServers).toContainEqual({ ip: "0.0.0.0", port: 40000 });
+    const mediaConfig = moduleRef.get(MediaConfig);
+    expect(serverDump.udpSockets).toContainEqual({
+      ip: mediaConfig.listenIp,
+      port: mediaConfig.minimumPort,
+    });
+    expect(serverDump.tcpServers).toContainEqual({
+      ip: mediaConfig.listenIp,
+      port: mediaConfig.minimumPort,
+    });
 
     const registry = moduleRef.get(RouterRegistryService);
     const handle = await registry.acquire("voice-channel-one");

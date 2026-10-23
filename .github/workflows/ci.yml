@@ -37,7 +37,7 @@ jobs:
             --entrypoint caddy voreli-web:ci validate --config /etc/caddy/Caddyfile
 
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # Tests run against real dependencies, never against mocks (docs/AGENTS.md), so CI has
     # to provide them. The health checks keep the job from starting before they answer.
