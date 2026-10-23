@@ -22,5 +22,8 @@ process.env["QUEUE_PREFIX"] = `voreli-test-${randomUUID()}`;
 // A real mediasoup worker is booted by every application harness. One is enough to test
 // the media contracts and keeps the sequential suite from paying for every host CPU.
 process.env["MEDIASOUP_MAX_WORKERS"] = "1";
+// Keep Vitest's real WebRtcServer away from the live tailnet deployment and Playwright.
+process.env["MEDIASOUP_RTC_MIN_PORT"] = "21000";
+process.env["MEDIASOUP_RTC_MAX_PORT"] = "21010";
 // Exercise lazy socket-session checks without making the realtime suite sleep for a minute.
 process.env["SOCKET_REVALIDATE_INTERVAL"] = "1";

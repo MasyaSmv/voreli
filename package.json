@@ -18,7 +18,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @voreli/server db:migrate",
-    "db:studio": "pnpm --filter @voreli/server db:studio"
+    "db:studio": "pnpm --filter @voreli/server db:studio",
+    "deploy:tailnet": "bash scripts/tailnet/up.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
