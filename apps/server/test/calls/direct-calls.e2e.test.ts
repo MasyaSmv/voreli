@@ -123,6 +123,47 @@ describe("direct call lifecycle", () => {
     ).resolves.toBe(1);
   });
 
+  it("does not create another call with the same nonce after session rotation", async () => {
+    const conversation = await conversations.findOrCreate(caller.id, callee.id);
+    const first = await calls.start(caller.id, "caller-session-before-refresh", {
+      conversationId: conversation.id,
+      clientNonce: "nonce-across-sessions",
+    });
+    await calls.cancel(first.id, caller.id);
+    await expect(
+      calls.start(caller.id, "caller-session-after-refresh", {
+        conversationId: conversation.id,
+        clientNonce: "nonce-across-sessions",
+      }),
+    ).rejects.toMatchObject({ errorCode: "CALL_NONCE_CONFLICT" });
+    expect(
+      await testApp.prisma.db.directCall.count({
+        where: { callerId: caller.id, clientNonce: "nonce-across-sessions" },
+      }),
+    ).toBe(1);
+  });
+
+  it("rejects reuse of a call nonce for another callee", async () => {
+    const firstConversation = await conversations.findOrCreate(caller.id, callee.id);
+    const otherConversation = await conversations.findOrCreate(caller.id, third.id);
+    await calls.start(caller.id, "caller-session-one", {
+      conversationId: firstConversation.id,
+      clientNonce: "nonce-other-callee",
+    });
+
+    await expect(
+      calls.start(caller.id, "caller-session-two", {
+        conversationId: otherConversation.id,
+        clientNonce: "nonce-other-callee",
+      }),
+    ).rejects.toMatchObject({ errorCode: "CALL_NONCE_CONFLICT" });
+    expect(
+      await testApp.prisma.db.directCall.count({
+        where: { callerId: caller.id, clientNonce: "nonce-other-callee" },
+      }),
+    ).toBe(1);
+  });
+
   it("enforces busy state across conversations and caller/callee roles", async () => {
     const firstConversation = await conversations.findOrCreate(caller.id, callee.id);
     const secondConversation = await conversations.findOrCreate(callee.id, third.id);
