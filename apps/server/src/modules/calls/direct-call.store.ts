@@ -14,6 +14,7 @@ import { messageAuthorSelect } from "../chat/message-author.js";
 import {
   DirectCallAlreadyAnsweredError,
   DirectCallInvalidStateError,
+  DirectCallNonceConflictError,
   DirectCallNotFoundError,
   DirectCallUserBusyError,
 } from "./errors/direct-call-errors.js";
@@ -32,6 +33,14 @@ export interface TransitionedCall {
   readonly historyMessage: MessageWithAuthor | null;
 }
 
+interface StartCallInput {
+  readonly conversationId: string;
+  readonly callerId: string;
+  readonly calleeId: string;
+  readonly callerSessionId: string;
+  readonly clientNonce: string;
+}
+
 @Injectable()
 export class DirectCallStore {
   constructor(
@@ -40,23 +49,17 @@ export class DirectCallStore {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async start(input: {
-    conversationId: string;
-    callerId: string;
-    calleeId: string;
-    callerSessionId: string;
-    clientNonce: string;
-  }): Promise<StartedCall> {
+  async start(input: StartCallInput): Promise<StartedCall> {
     const existing = await this.prisma.db.directCall.findUnique({
       where: {
-        callerSessionId_clientNonce: {
-          callerSessionId: input.callerSessionId,
+        callerId_clientNonce: {
+          callerId: input.callerId,
           clientNonce: input.clientNonce,
         },
       },
       include: callWithUsers,
     });
-    if (existing) return { call: existing, created: false };
+    if (existing) return this.existingStart(existing, input);
 
     return this.prisma.runInTransaction(async () => {
       for (const userId of [input.callerId, input.calleeId].sort()) {
@@ -66,14 +69,14 @@ export class DirectCallStore {
 
       const raced = await this.prisma.db.directCall.findUnique({
         where: {
-          callerSessionId_clientNonce: {
-            callerSessionId: input.callerSessionId,
+          callerId_clientNonce: {
+            callerId: input.callerId,
             clientNonce: input.clientNonce,
           },
         },
         include: callWithUsers,
       });
-      if (raced) return { call: raced, created: false };
+      if (raced) return this.existingStart(raced, input);
 
       const busy = await this.prisma.db.directCall.findFirst({
         where: {
@@ -102,6 +105,16 @@ export class DirectCallStore {
       });
       return { call, created: true };
     });
+  }
+
+  private existingStart(call: DirectCallWithUsers, input: StartCallInput): StartedCall {
+    if (
+      call.conversationId !== input.conversationId ||
+      call.calleeId !== input.calleeId ||
+      call.callerSessionId !== input.callerSessionId
+    )
+      throw new DirectCallNonceConflictError(input.clientNonce);
+    return { call, created: false };
   }
 
   async accept(callId: string, calleeId: string, sessionId: string): Promise<DirectCallWithUsers> {

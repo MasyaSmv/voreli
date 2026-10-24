@@ -169,7 +169,9 @@ model DirectCall {
   endedBy        User?              @relation("DirectCallEndedBy", fields: [endedById], references: [id], onDelete: SetNull)
   historyMessage Message?           @relation("DirectCallHistoryMessage", fields: [historyMessageId], references: [id], onDelete: SetNull)
 
-  @@unique([callerSessionId, clientNonce])
+  @@unique([callerId, clientNonce])
+  @@index([callerSessionId])
+  @@index([answeredSessionId])
   @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([calleeId, status, createdAt(sort: Desc)])
   @@index([callerId, status, createdAt(sort: Desc)])

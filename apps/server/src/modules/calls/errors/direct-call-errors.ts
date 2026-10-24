@@ -26,6 +26,19 @@ export class DirectCallUserBusyError extends DomainError {
   }
 }
 
+export class DirectCallNonceConflictError extends DomainError {
+  static readonly CODE = "CALL_NONCE_CONFLICT";
+  readonly errorCode = DirectCallNonceConflictError.CODE;
+
+  constructor(readonly clientNonce: string) {
+    super("Call nonce already belongs to another conversation or caller session");
+  }
+
+  override context(): Readonly<Record<string, unknown>> {
+    return { clientNonce: this.clientNonce };
+  }
+}
+
 export class DirectCallAlreadyAnsweredError extends DomainError {
   static readonly CODE = "CALL_ALREADY_ANSWERED";
   readonly errorCode = DirectCallAlreadyAnsweredError.CODE;
