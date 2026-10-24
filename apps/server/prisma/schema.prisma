@@ -374,8 +374,7 @@ model Message {
   attachments        Attachment[]
   reactions          MessageReaction[]
 
-  @@unique([directConversationId, authorId, clientNonce])
-  @@unique([channelId, authorId, clientNonce])
+  @@unique([authorId, clientNonce])
   // Cursor pagination of channel history walks this index backwards. Never OFFSET.
   @@index([channelId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([directConversationId, createdAt(sort: Desc), id(sort: Desc)])
