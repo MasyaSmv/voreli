@@ -43,6 +43,29 @@ describe("rich channel messages", () => {
       .get(MessageCompositionService)
       .send({ channelId, authorId: server.ownerId, text, ...extra });
 
+  it("keeps a nonce unique across channels for the same author", async () => {
+    const first = await send("first", { clientNonce: "shared-intent" });
+    const otherChannelId = createId();
+    await harness.prisma.db.channel.create({
+      data: { id: otherChannelId, serverId: server.serverId, name: "other", type: "TEXT" },
+    });
+
+    await expect(
+      harness.app.get(MessageCompositionService).send({
+        channelId: otherChannelId,
+        authorId: server.ownerId,
+        text: "second",
+        clientNonce: "shared-intent",
+      }),
+    ).rejects.toMatchObject({ errorCode: "MESSAGE_NONCE_CONFLICT" });
+    expect((await send("first", { clientNonce: "shared-intent" })).id).toBe(first.id);
+    expect(
+      await harness.prisma.db.message.count({
+        where: { authorId: server.ownerId, clientNonce: "shared-intent" },
+      }),
+    ).toBe(1);
+  });
+
   it("binds ready files atomically, handles retries, serves private preview and revokes it on delete", async () => {
     const upload = await files.ready();
     const message = await send("", { attachmentIds: [upload.id], clientNonce: "retry" });

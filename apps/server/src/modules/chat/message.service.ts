@@ -1,13 +1,12 @@
 import { InvalidMessageError } from "./errors/rich-message-errors.js";
 import { Inject, Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
 import { encodeTextContent, TEXT_CONTENT_SCHEMA } from "@voreli/shared";
 
 import { ID_GENERATOR, type IdGenerator } from "../../common/services/id-generator.js";
 import { PrismaService } from "../../infra/database/prisma.service.js";
 import { ContactPolicyService } from "../relationships/contact-policy.service.js";
 import { DirectConversationService } from "../relationships/direct-conversation.service.js";
-import { ReplyTargetNotInChannelError } from "./errors/chat-errors.js";
+import { MessageNonceConflictError, ReplyTargetNotInChannelError } from "./errors/chat-errors.js";
 import { ChatBroadcaster } from "./chat-broadcaster.js";
 import { MessagePresenter, type MessageWithAuthor } from "./message-presenter.js";
 import { messageAuthorSelect } from "./message-author.js";
@@ -56,20 +55,22 @@ export class MessageService {
       }
     }
 
-    if (input.clientNonce !== undefined) {
-      const existing = await this.prisma.db.message.findFirst({
-        where: {
-          directConversationId: input.conversationId,
-          authorId: input.authorId,
-          clientNonce: input.clientNonce,
-        },
-        include: { author: { select: messageAuthorSelect } },
-      });
-      if (existing) return existing;
-    }
+    return this.prisma.runInTransaction(async () => {
+      if (typeof input.clientNonce === "string") {
+        await this.prisma.db
+          .$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.authorId + ":" + input.clientNonce}))`;
+        const existing = await this.prisma.db.message.findFirst({
+          where: { authorId: input.authorId, clientNonce: input.clientNonce },
+          include: { author: { select: messageAuthorSelect } },
+        });
+        if (existing) {
+          if (existing.directConversationId !== input.conversationId)
+            throw new MessageNonceConflictError(input.clientNonce);
+          return existing;
+        }
+      }
 
-    try {
-      return await this.prisma.db.message.create({
+      return this.prisma.db.message.create({
         data: {
           id: this.ids.generate(),
           directConversationId: input.conversationId,
@@ -81,23 +82,7 @@ export class MessageService {
         },
         include: { author: { select: messageAuthorSelect } },
       });
-    } catch (error: unknown) {
-      if (
-        input.clientNonce !== undefined &&
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        return this.prisma.db.message.findFirstOrThrow({
-          where: {
-            directConversationId: input.conversationId,
-            authorId: input.authorId,
-            clientNonce: input.clientNonce,
-          },
-          include: { author: { select: messageAuthorSelect } },
-        });
-      }
-      throw error;
-    }
+    });
   }
 
   async edit(messageId: string, text: string): Promise<MessageWithAuthor> {

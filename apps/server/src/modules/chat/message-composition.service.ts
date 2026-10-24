@@ -7,6 +7,7 @@ import { UploadLifecycleService } from "../uploads/upload-lifecycle.service.js";
 import { InvalidMessageError, AttachmentAlreadyUsedError } from "./errors/rich-message-errors.js";
 import {
   NotATextChannelError,
+  MessageNonceConflictError,
   ReplyTargetNotInChannelError,
   SystemMessageImmutableError,
 } from "./errors/chat-errors.js";
@@ -50,16 +51,19 @@ export class MessageCompositionService {
       // Serialize retries before claiming uploads, including across independent sockets.
       if (input.clientNonce) {
         await this.prisma.db
-          .$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.channelId + ":" + input.authorId + ":" + input.clientNonce}))`;
+          .$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.authorId + ":" + input.clientNonce}))`;
         const previous = await this.prisma.db.message.findFirst({
           where: {
-            channelId: input.channelId,
             authorId: input.authorId,
             clientNonce: input.clientNonce,
           },
           include: { author: { select: messageAuthorSelect } },
         });
-        if (previous) return previous;
+        if (previous) {
+          if (previous.channelId !== input.channelId)
+            throw new MessageNonceConflictError(input.clientNonce);
+          return previous;
+        }
       }
       if (input.replyToId) {
         const target = await this.prisma.db.message.findUnique({ where: { id: input.replyToId } });

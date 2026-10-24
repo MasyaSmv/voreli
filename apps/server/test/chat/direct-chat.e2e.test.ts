@@ -9,11 +9,14 @@ import {
   ServerEvent,
 } from "@voreli/shared";
 import { io, type Socket } from "socket.io-client";
+import { createId } from "@paralleldrive/cuid2";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { Factories, type SeededServer, type SeededUser } from "../support/factories.js";
 import { createTestApp, type TestApp } from "../support/test-app.js";
+import { MessageCompositionService } from "../../src/modules/chat/message-composition.service.js";
+import { MessageService } from "../../src/modules/chat/message.service.js";
 
 describe("direct message realtime", () => {
   let harness: TestApp;
@@ -93,6 +96,95 @@ describe("direct message realtime", () => {
       });
     });
   }
+
+  it("rejects reuse of a direct-message nonce in a channel", async () => {
+    const nonce = "direct-across-containers";
+    const direct = await harness.app.get(MessageService).sendDirect({
+      conversationId,
+      authorId: alice.id,
+      text: "direct intent",
+      clientNonce: nonce,
+    });
+    const channelId = createId();
+    await harness.prisma.db.channel.create({
+      data: { id: channelId, serverId: server.serverId, name: "nonce-conflict", type: "TEXT" },
+    });
+    await expect(
+      harness.app.get(MessageCompositionService).send({
+        channelId,
+        authorId: alice.id,
+        text: "different intent",
+        clientNonce: nonce,
+      }),
+    ).rejects.toMatchObject({ errorCode: "MESSAGE_NONCE_CONFLICT" });
+    expect(
+      (
+        await harness.app.get(MessageService).sendDirect({
+          conversationId,
+          authorId: alice.id,
+          text: "direct intent",
+          clientNonce: nonce,
+        })
+      ).id,
+    ).toBe(direct.id);
+    await harness.prisma.db.message.delete({ where: { id: direct.id } });
+  });
+
+  it("treats explicit null nonce as absent on the socket path", async () => {
+    const channelId = createId();
+    await harness.prisma.db.channel.create({
+      data: { id: channelId, serverId: server.serverId, name: "null-nonce", type: "TEXT" },
+    });
+    await harness.app.get(MessageCompositionService).send({
+      channelId,
+      authorId: alice.id,
+      text: "without nonce",
+    });
+    const aliceSocket = connect(aliceToken);
+    await connected(aliceSocket);
+    const ack: Ack<{ message: MessageView }> = await aliceSocket.emitWithAck(
+      ClientEvent.DirectSendMessage,
+      { conversationId, text: "null nonce is absent", clientNonce: null },
+    );
+    expect(ack.ok).toBe(true);
+    if (ack.ok) {
+      expect(ack.data.message.body).toEqual({ kind: "text", text: "null nonce is absent" });
+      await harness.prisma.db.message.delete({ where: { id: ack.data.message.id } });
+    }
+  });
+
+  it("serializes simultaneous channel and direct sends with the same nonce", async () => {
+    const channelId = createId();
+    const nonce = "simultaneous-cross-container";
+    await harness.prisma.db.channel.create({
+      data: { id: channelId, serverId: server.serverId, name: "nonce-race", type: "TEXT" },
+    });
+    const results = await Promise.allSettled([
+      harness.app.get(MessageCompositionService).send({
+        channelId,
+        authorId: alice.id,
+        text: "channel intent",
+        clientNonce: nonce,
+      }),
+      harness.app.get(MessageService).sendDirect({
+        conversationId,
+        authorId: alice.id,
+        text: "direct intent",
+        clientNonce: nonce,
+      }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({
+      reason: { errorCode: "MESSAGE_NONCE_CONFLICT" },
+    });
+    const stored = await harness.prisma.db.message.findFirstOrThrow({
+      where: { authorId: alice.id, clientNonce: nonce },
+    });
+    expect(
+      await harness.prisma.db.message.count({ where: { authorId: alice.id, clientNonce: nonce } }),
+    ).toBe(1);
+    await harness.prisma.db.message.delete({ where: { id: stored.id } });
+  });
 
   it("delivers DM once, tracks unread and immediately revokes a disallowed sender", async () => {
     const aliceSocket = connect(aliceToken);

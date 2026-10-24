@@ -17,6 +17,20 @@ export class MessageNotFoundError extends DomainError implements HttpMappable {
   }
 }
 
+export class MessageNonceConflictError extends DomainError implements HttpMappable {
+  static readonly CODE = "MESSAGE_NONCE_CONFLICT";
+  readonly errorCode = MessageNonceConflictError.CODE;
+  readonly httpStatus = HttpStatus.CONFLICT;
+
+  constructor(readonly clientNonce: string) {
+    super(`Message nonce ${clientNonce} already belongs to another conversation`);
+  }
+
+  override context(): Readonly<Record<string, unknown>> {
+    return { clientNonce: this.clientNonce };
+  }
+}
+
 /** Editing someone else's message needs MANAGE_MESSAGES; editing your own never does. */
 export class NotMessageAuthorError extends DomainError implements HttpMappable {
   static readonly CODE = "NOT_MESSAGE_AUTHOR";
