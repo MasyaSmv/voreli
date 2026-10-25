@@ -80,6 +80,12 @@ export class AndroidChrome {
     );
     await this.waitForCdp();
     await this.call("Harness.closeOtherPages", {}, "page", "about:");
+    await this.call(
+      "Storage.clearDataForOrigin",
+      { origin: this.origin, storageTypes: "all" },
+      "page",
+      "about:",
+    );
     await this.call("Page.navigate", { url: `${this.origin}/` }, "page", "about:");
     await this.waitForTruthy(
       `[...document.querySelectorAll("button")].some((button) => button.textContent?.trim() === "ru")`,
@@ -114,20 +120,114 @@ export class AndroidChrome {
   }
 
   async login(username: string, password: string): Promise<void> {
-    await this.evaluate(`(() => {
-      const set = (selector, value) => {
-        const input = document.querySelector(selector);
-        if (!(input instanceof HTMLInputElement)) return false;
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-        setter?.call(input, value);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        return true;
-      };
-      return set('input[autocomplete="username"]', ${JSON.stringify(username)}) &&
-        set('input[autocomplete="current-password"]', ${JSON.stringify(password)});
-    })()`);
+    await this.fillInput('input[autocomplete="username"]', username);
+    await this.fillInput('input[autocomplete="current-password"]', password);
     await this.clickButton("Войти");
-    await this.waitForText("Voice Android e2e");
+    await this.waitForText("Каналы");
+  }
+
+  async fillInput(selector: string, value: string): Promise<void> {
+    const filled = await this.evaluate<boolean>(`(() => {
+      const input = document.querySelector(${JSON.stringify(selector)});
+      if (!(input instanceof HTMLInputElement)) return false;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, ${JSON.stringify(value)});
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })()`);
+    if (!filled) throw new Error(`Android Chrome input not found: ${selector}`);
+  }
+
+  async selectFile(filename: string, mimeType: string, base64: string): Promise<void> {
+    const selected = await this.evaluate<boolean>(
+      `(() => {
+      const input = document.querySelector('input[type="file"][aria-label="Прикрепить файл"]');
+      if (!(input instanceof HTMLInputElement)) return false;
+      const bytes = Uint8Array.from(atob(${JSON.stringify(base64)}), (character) => character.charCodeAt(0));
+      const file = new File([bytes], ${JSON.stringify(filename)}, { type: ${JSON.stringify(mimeType)} });
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`,
+      this.origin,
+      true,
+    );
+    if (!selected) throw new Error("Android Chrome attachment input not found");
+  }
+
+  async openNativeFilePicker(): Promise<void> {
+    const opened = await this.evaluate<boolean>(
+      `(() => {
+      const input = document.querySelector('input[type="file"][aria-label="Прикрепить файл"]');
+      if (!(input instanceof HTMLInputElement)) return false;
+      input.click();
+      return true;
+    })()`,
+      this.origin,
+      true,
+    );
+    if (!opened) throw new Error("Android Chrome attachment input not found");
+  }
+
+  async addGalleryPhoto(localPath: string, filename: string): Promise<void> {
+    const { stdout } = await execFileAsync("wslpath", ["-w", localPath]);
+    const devicePath = `/sdcard/Pictures/${filename}`;
+    await this.adb("shell", "mkdir", "-p", "/sdcard/Pictures");
+    await this.adb("push", stdout.trim(), devicePath);
+    await this.adb(
+      "shell",
+      "am",
+      "broadcast",
+      "-a",
+      "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+      "-d",
+      `file://${devicePath}`,
+    );
+  }
+
+  async removeGalleryPhoto(filename: string): Promise<void> {
+    await this.adb("shell", "rm", "-f", `/sdcard/Pictures/${filename}`);
+  }
+
+  async nativeUiSummary(): Promise<string> {
+    await this.adb("shell", "uiautomator", "dump", androidUiDumpPath);
+    const hierarchy = await this.adb("shell", "cat", androidUiDumpPath);
+    return (hierarchy.match(/<node\b[^>]*\/>/gu) ?? [])
+      .map((node) => {
+        const text = node.match(/text="([^"]*)"/u)?.[1] ?? "";
+        const description = node.match(/content-desc="([^"]*)"/u)?.[1] ?? "";
+        const id = node.match(/resource-id="([^"]*)"/u)?.[1] ?? "";
+        return [text, description, id].filter(Boolean).join(" | ");
+      })
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 4000);
+  }
+
+  async tapNativeControl(label: string): Promise<void> {
+    await this.adb("shell", "uiautomator", "dump", androidUiDumpPath);
+    const hierarchy = await this.adb("shell", "cat", androidUiDumpPath);
+    const nodes = hierarchy.match(/<node\b[^>]*\/>/gu) ?? [];
+    const node = nodes.find((candidate) => {
+      const text = candidate.match(/text="([^"]*)"/u)?.[1];
+      const description = candidate.match(/content-desc="([^"]*)"/u)?.[1];
+      const id = candidate.match(/resource-id="([^"]*)"/u)?.[1];
+      return text === label || description === label || id?.endsWith(`/${label}`);
+    });
+    const bounds = node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/u);
+    if (!bounds) throw new Error(`Android native control not found: ${label}`);
+    const left = Number(bounds[1]);
+    const top = Number(bounds[2]);
+    const right = Number(bounds[3]);
+    const bottom = Number(bounds[4]);
+    await this.adb("shell", "input", "tap", String((left + right) / 2), String((top + bottom) / 2));
+  }
+
+  async waitForMessageImage(): Promise<void> {
+    await this.waitForTruthy(`[...document.querySelectorAll('li[id^="message-"] img')]
+      .some((image) => image.complete && image.naturalWidth > 0)`);
   }
 
   async clickButton(text: string): Promise<void> {
@@ -135,7 +235,7 @@ export class AndroidChrome {
       `(() => {
       const target = ${JSON.stringify(text)};
       const button = [...document.querySelectorAll("button")]
-        .find((candidate) => candidate.textContent?.trim() === target);
+        .find((candidate) => candidate.textContent?.trim() === target || candidate.getAttribute("aria-label") === target);
       if (!button) return false;
       button.click();
       return true;
@@ -147,6 +247,23 @@ export class AndroidChrome {
       const body = await this.evaluate<string>("document.body?.innerText ?? ''");
       throw new Error(`Android Chrome button not found: ${text}\n${body}`);
     }
+  }
+
+  async clickMessageButton(messageId: string, label: string): Promise<void> {
+    const clicked = await this.evaluate<boolean>(
+      `(() => {
+      const message = document.getElementById(${JSON.stringify(messageId)});
+      const label = ${JSON.stringify(label)};
+      const button = [...(message?.querySelectorAll("button") ?? [])]
+        .find((candidate) => candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label);
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`,
+      this.origin,
+      true,
+    );
+    if (!clicked) throw new Error(`Android Chrome message button not found: ${messageId} ${label}`);
   }
 
   async allowMicrophonePrompt(timeoutMs = 10_000): Promise<void> {
@@ -245,6 +362,12 @@ export class AndroidChrome {
     }
   }
 
+  async waitForNoText(text: string): Promise<void> {
+    await this.waitForTruthy(
+      `document.body?.innerText.includes(${JSON.stringify(text)}) === false`,
+    );
+  }
+
   async videoCount(): Promise<number> {
     return this.evaluate<number>('document.querySelectorAll("video").length');
   }
@@ -259,12 +382,38 @@ export class AndroidChrome {
   }
 
   async waitForLiveVideo(): Promise<void> {
-    await this.waitForTruthy(`[...document.querySelectorAll("video")].some((video) => {
-      const stream = video.srcObject;
-      if (!(stream instanceof MediaStream)) return false;
-      const track = stream.getVideoTracks()[0];
-      return track?.readyState === "live" && video.videoWidth > 0 && video.videoHeight > 0;
-    })`);
+    try {
+      await this.waitForTruthy(`[...document.querySelectorAll("video")].some((video) => {
+        const stream = video.srcObject;
+        if (!(stream instanceof MediaStream)) return false;
+        const track = stream.getVideoTracks()[0];
+        return track?.readyState === "live" && video.videoWidth > 0 && video.videoHeight > 0;
+      })`);
+    } catch (error: unknown) {
+      const diagnostics = await this.evaluate<unknown>(`(async () => ({
+        body: document.body?.innerText.slice(-1200),
+        videos: [...document.querySelectorAll("video")].map((video) => ({
+          width: video.videoWidth,
+          height: video.videoHeight,
+          trackState: video.srcObject instanceof MediaStream
+            ? video.srcObject.getVideoTracks()[0]?.readyState : undefined,
+        })),
+        peers: await Promise.all((window.__androidPeerConnections ?? []).map(async (connection) => {
+          const reports = [];
+          (await connection.getStats()).forEach((report) => {
+            if (["candidate-pair", "inbound-rtp"].includes(report.type)) {
+              reports.push({ type: report.type, state: report.state,
+                bytesReceived: report.bytesReceived, framesDecoded: report.framesDecoded,
+                nominated: report.nominated });
+            }
+          });
+          return { state: connection.connectionState, ice: connection.iceConnectionState, reports };
+        })),
+      }))()`);
+      throw new Error(`Android Chrome video did not become live: ${JSON.stringify(diagnostics)}`, {
+        cause: error,
+      });
+    }
   }
 
   async inboundVideoStats(): Promise<AndroidInboundVideoStats> {
@@ -282,6 +431,31 @@ export class AndroidChrome {
       }
       return result;
     })()`);
+  }
+
+  async inboundAudioBytes(): Promise<number> {
+    return this.evaluate<number>(`(async () => {
+      let bytesReceived = 0;
+      for (const connection of window.__androidPeerConnections ?? []) {
+        const reports = await connection.getStats();
+        reports.forEach((report) => {
+          if (report.type === "inbound-rtp" && report.kind === "audio") {
+            bytesReceived += Number(report.bytesReceived ?? 0);
+          }
+        });
+      }
+      return bytesReceived;
+    })()`);
+  }
+
+  async waitForLiveAudio(): Promise<void> {
+    await this.waitForTruthy(`[...document.querySelectorAll("audio")].length === 1 &&
+      [...document.querySelectorAll("audio")].every((element) => {
+        const stream = element.srcObject;
+        if (!(stream instanceof MediaStream)) return false;
+        const track = stream.getAudioTracks()[0];
+        return track?.readyState === "live" && !track.muted && !element.paused;
+      })`);
   }
 
   async viewport(): Promise<{ readonly width: number; readonly height: number }> {
