@@ -3,6 +3,8 @@ import type { Ack, MessageView } from "@voreli/shared";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConversationCache } from "../../entities/message/conversation-cache";
+import { messageOutbox } from "../../entities/message/message-outbox";
+import type { OutboxContainer } from "../../entities/message/outbox-storage";
 import { chatSocket } from "../../shared/api/socket";
 import type { RealtimeConversationAdapter } from "./conversation-contract";
 
@@ -21,29 +23,32 @@ export function useConversationSend(
     options: { replyToId?: string; attachmentIds?: readonly string[] } = {},
   ): Promise<boolean> {
     if (!adapter || !canSend) return false;
+    if (!options.attachmentIds?.length) {
+      if (!user || !text.trim()) return false;
+      const payload = adapter.payload();
+      const container: OutboxContainer =
+        typeof payload["channelId"] === "string"
+          ? { kind: "channel", id: payload["channelId"] }
+          : typeof payload["conversationId"] === "string"
+            ? { kind: "direct", id: payload["conversationId"] }
+            : (() => {
+                throw new Error("Message container is missing");
+              })();
+      try {
+        await messageOutbox.activate(user.id);
+        await messageOutbox.enqueue(user.id, container, text, options.replyToId ?? null);
+        setFailure(null);
+        return true;
+      } catch (error: unknown) {
+        console.error("Message could not be stored locally", { error, conversation: key });
+        setFailure({ key, message: t("chat.outbox.storageFailed") });
+        return false;
+      }
+    }
     const signature = JSON.stringify({ key, text, options });
     const nonce =
       retry.current?.signature === signature ? retry.current.nonce : crypto.randomUUID();
     retry.current = { signature, nonce };
-    if (user && !options.attachmentIds?.length) {
-      const container = adapter.payload();
-      cache.optimistic({
-        id: `pending:${nonce}`,
-        author: user,
-        channelId: typeof container["channelId"] === "string" ? container["channelId"] : null,
-        directConversationId:
-          typeof container["conversationId"] === "string" ? container["conversationId"] : null,
-        body: { kind: "text", text },
-        replyToId: options.replyToId ?? null,
-        reply: null,
-        attachments: [],
-        reactions: [],
-        createdAt: new Date().toISOString(),
-        editedAt: null,
-        deletedAt: null,
-        clientNonce: nonce,
-      });
-    }
     try {
       const response: unknown = await chatSocket()
         .timeout(10_000)
@@ -53,7 +58,6 @@ export function useConversationSend(
         );
       const ack = response as Ack<{ message: MessageView }>;
       if (!ack.ok) {
-        cache.discardPending(nonce);
         setFailure({ key, message: ack.message });
         return false;
       }
@@ -62,7 +66,6 @@ export function useConversationSend(
       cache.insert(ack.data.message);
       return true;
     } catch (error: unknown) {
-      cache.discardPending(nonce);
       console.error("Message send failed", { error, conversation: key, nonce });
       setFailure({ key, message: t("chat.errors.notSent") });
       return false;

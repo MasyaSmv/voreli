@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import { apiFetch, refreshAccessToken, setAccessToken } from "../../shared/api/http";
 import { chatSocket, disconnectSocket } from "../../shared/api/socket";
+import { messageOutbox } from "../message/message-outbox";
 
 interface SessionState {
   readonly user: PublicUser | null;
@@ -20,7 +21,7 @@ interface AuthPayload {
   readonly accessToken: string;
 }
 
-export const useSession = create<SessionState>((set) => {
+export const useSession = create<SessionState>((set, get) => {
   function adopt(payload: AuthPayload): void {
     setAccessToken(payload.accessToken);
     set({ user: payload.user, restoring: false });
@@ -51,6 +52,8 @@ export const useSession = create<SessionState>((set) => {
     },
 
     async logOut() {
+      const user = get().user;
+      if (user) await messageOutbox.clearForLogout(user.id);
       await apiFetch("/auth/logout", { method: "POST" }).catch((error: unknown) => {
         console.error("Server logout failed; clearing the local session", { error });
       });

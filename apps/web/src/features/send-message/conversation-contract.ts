@@ -1,4 +1,5 @@
 import type { MessagePage, MessageView } from "@voreli/shared";
+import type { PendingTextMessage } from "../../entities/message/outbox-storage";
 
 export interface RealtimeConversationAdapter {
   readonly events: {
@@ -31,6 +32,7 @@ export interface RealtimeConversationAdapter {
 
 export interface ConversationChat {
   readonly messages: readonly MessageView[];
+  readonly pending: readonly PendingTextMessage[];
   readonly typing: readonly string[];
   readonly loading: boolean;
   readonly error: string | null;

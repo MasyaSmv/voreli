@@ -126,6 +126,7 @@ export function useRealtimeConversation(
   const typing = useMemo(() => [...typingUntil.values()].map((item) => item.name), [typingUntil]);
   return {
     messages,
+    pending: timeline.pending,
     typing,
     loading: timeline.loading,
     error: error ?? sender.error ?? timeline.error,

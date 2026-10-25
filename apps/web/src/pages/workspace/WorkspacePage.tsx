@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChannelView } from "@voreli/shared";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,12 +13,20 @@ import { ServerRail } from "../../widgets/server-rail/ServerRail";
 import { ServerHome } from "../../widgets/server-home/ServerHome";
 import { VoicePanel } from "../../widgets/voice-panel/VoicePanel";
 import { DirectCallOverlay } from "../../widgets/direct-call/DirectCallOverlay";
+import { messageOutbox } from "../../entities/message/message-outbox";
+import {
+  OutboxDispatcher,
+  SocketOutboxTransport,
+} from "../../features/send-message/outbox-dispatcher";
+import { chatSocket } from "../../shared/api/socket";
 
 /** The desktop workspace composes navigation and the active real-time surface. */
 export function WorkspacePage() {
   const { t } = useTranslation();
   const logOut = useSession((state) => state.logOut);
   const currentUser = useSession((state) => state.user);
+  const currentUserId = currentUser?.id ?? null;
+  const queryClient = useQueryClient();
   const [pickedServerId, setPickedServerId] = useState<string | null | undefined>(undefined);
   const [pickedChannelId, setPickedChannelId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<"servers" | "channels" | "content">("content");
@@ -27,6 +35,32 @@ export function WorkspacePage() {
     if (currentUser) directCallSession.connect();
     return () => directCallSession.reset();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    let disposed = false;
+    let dispatcher: OutboxDispatcher | null = null;
+    void messageOutbox
+      .activate(currentUserId)
+      .then(() => {
+        if (disposed) return;
+        dispatcher = new OutboxDispatcher(
+          messageOutbox,
+          new SocketOutboxTransport(chatSocket()),
+          queryClient,
+          currentUserId,
+        );
+        dispatcher.start();
+      })
+      .catch((error: unknown) => {
+        console.error("Message outbox could not be opened", { error, userId: currentUserId });
+      });
+    return () => {
+      disposed = true;
+      dispatcher?.stop();
+      messageOutbox.deactivate();
+    };
+  }, [currentUserId, queryClient]);
 
   const servers = useQuery({ queryKey: ["servers"], queryFn: fetchMyServers });
   const serverId = pickedServerId === undefined ? (servers.data?.[0]?.id ?? null) : pickedServerId;
@@ -121,14 +155,23 @@ export function WorkspacePage() {
                 setPickedChannelId(channel.id);
                 setMobileView("content");
               }}
-              onLogout={() =>
+              onLogout={() => {
+                if (
+                  messageOutbox.snapshot().length > 0 &&
+                  !window.confirm(t("chat.outbox.logoutWarning"))
+                )
+                  return;
                 void voiceSession
                   .leave()
                   .catch((error: unknown) => {
                     console.error("Failed to leave voice before logout", { error });
                   })
                   .then(() => logOut())
-              }
+                  .catch((error: unknown) => {
+                    console.error("Logout failed", { error });
+                    window.alert(t("chat.outbox.logoutFailed"));
+                  });
+              }}
             />
           </div>
         ) : serverId !== null ? (

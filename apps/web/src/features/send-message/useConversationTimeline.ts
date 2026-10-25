@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageView } from "@voreli/shared";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { ConversationCache } from "../../entities/message/conversation-cache";
+import { messageOutbox } from "../../entities/message/message-outbox";
 import { useSession } from "../../entities/session/session.store";
 import { chatSocket } from "../../shared/api/socket";
 import type { RealtimeConversationAdapter } from "./conversation-contract";
@@ -9,6 +10,7 @@ import type { RealtimeConversationAdapter } from "./conversation-contract";
 export function useConversationTimeline(adapter: RealtimeConversationAdapter | null) {
   const client = useQueryClient();
   const userId = useSession((state) => state.user?.id);
+  const outboxItems = useSyncExternalStore(messageOutbox.subscribe, messageOutbox.snapshot);
   const container = JSON.stringify(adapter?.payload() ?? null);
   const cache = useMemo(
     () => new ConversationCache(client, ["conversation-messages", userId, container]),
@@ -28,7 +30,18 @@ export function useConversationTimeline(adapter: RealtimeConversationAdapter | n
     if (!adapter) return;
     const socket = chatSocket();
     const inserted = (message: MessageView) => {
-      if (adapter.messageBelongs(message)) cache.insert(message);
+      if (adapter.messageBelongs(message)) {
+        cache.insert(message);
+        if (message.author.id === userId && message.clientNonce) {
+          const pending = messageOutbox
+            .snapshot()
+            .find((item) => item.userId === userId && item.clientNonce === message.clientNonce);
+          if (pending)
+            void messageOutbox.remove(userId, pending.localId).catch((error: unknown) => {
+              console.error("Delivered outbox item could not be removed", { error });
+            });
+        }
+      }
     };
     const updated = (message: MessageView) => {
       if (adapter.messageBelongs(message)) cache.update(message);
@@ -45,7 +58,7 @@ export function useConversationTimeline(adapter: RealtimeConversationAdapter | n
       socket.off(adapter.events.messageUpdated, updated);
       socket.off(adapter.events.messageDeleted, removed);
     };
-  }, [adapter, cache]);
+  }, [adapter, cache, userId]);
   useEffect(() => {
     const target = revealTarget.current;
     if (!target || !history.data?.messages.some((message) => message.id === target)) return;
@@ -84,6 +97,20 @@ export function useConversationTimeline(adapter: RealtimeConversationAdapter | n
   return {
     cache,
     messages: history.data?.messages ?? [],
+    pending: outboxItems.filter((item) => {
+      if (item.userId !== userId || !adapter) return false;
+      const payload = adapter.payload();
+      const matches =
+        item.container.kind === "channel"
+          ? payload["channelId"] === item.container.id
+          : payload["conversationId"] === item.container.id;
+      return (
+        matches &&
+        !history.data?.messages.some(
+          (message) => message.author.id === userId && message.clientNonce === item.clientNonce,
+        )
+      );
+    }),
     loading: history.isLoading,
     error: history.error ? (adapter?.historyError ?? null) : null,
     loadOlder,
