@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import type { ConversationChat } from "../../features/send-message/useRealtimeConversation";
 import { Icon } from "../../shared/ui/Icon";
 import { MessageSkeleton, MessageTimeline } from "./MessageTimeline";
+import { OutboxRows } from "./OutboxRows";
 
 interface ConversationSurfaceProps {
   readonly rich?: boolean;
@@ -30,11 +31,11 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
   const [sending, setSending] = useState(false);
   const attachments = useAttachmentDrafts();
   const bottom = useRef<HTMLDivElement>(null);
-  const { messages, typing, loading, error, canSend, send, notifyTyping } = props.chat;
+  const { messages, pending, typing, loading, error, canSend, send, notifyTyping } = props.chat;
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+  }, [messages.length, pending.length]);
 
   async function submit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
@@ -90,7 +91,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading ? (
           <MessageSkeleton />
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && pending.length === 0 ? (
           <div className="flex min-h-full items-end px-7 py-8">
             <div className="max-w-lg">
               <span className="grid h-14 w-14 place-items-center rounded-2xl bg-panel-raised text-accent-bright">
@@ -117,6 +118,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
               onReply={props.rich ? setReply : undefined}
               onReveal={props.chat.reveal}
             />
+            <OutboxRows items={pending} />
           </>
         )}
         <div ref={bottom} />
